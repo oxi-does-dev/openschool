@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F5EFE2</item>
+        <item name="android:colorBackground">#F5EFE2</item>
+        <item name="android:colorAccent">#34577D</item>
+        <item name="android:colorPrimary">#34577D</item>
+        <item name="android:colorPrimaryDark">#F5EFE2</item>
+        <item name="android:statusBarColor">#F5EFE2</item>
+        <item name="android:navigationBarColor">#F5EFE2</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:textColorPrimary">#2B2A26</item>
+        <item name="android:textColorSecondary">#7A7365</item>
+        <item name="android:alertDialogTheme">@style/AppDialog</item>
+    </style>
+
+    <style name="AppDialog" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="android:colorAccent">#34577D</item>
+        <item name="android:textColorPrimary">#2B2A26</item>
+        <item name="android:textColorSecondary">#7A7365</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
+</resources>

@@ -1,0 +1,22 @@
+# сборка
+android/build/
+android/gen/
+android/sch.apk
+android/sch.apk.idsig
+cpp/build/
+/sch
+*.o
+*.class
+*.pyc
+__pycache__/
+
+# подпись
+android/keystore/
+*.jks
+*.keystore
+
+# локальные данные и кэш
+cookies.json
+*.log
+local.properties
+.DS_Store
