@@ -31,6 +31,7 @@ final class Api {
     static final String EJ = BASE + "/api/ej/attachments/v1";
     static final String RATING = BASE + "/api/ej/rating/v1";
     static final String PARTNERS = BASE + "/api/ej/partners/v1";
+    static final String EJ_CORE = BASE + "/api/ej/core/family/v1";
     static final String UA =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36";
@@ -57,6 +58,15 @@ final class Api {
     private String studentId;
     private String personId;
 
+    // Выбранный ребёнок. Если не задан, берём active_student из cookies.
+    private static String selectedStudentId;
+    private static String selectedPersonId;
+
+    static void selectStudent(String sid, String person) {
+        selectedStudentId = sid == null || sid.trim().isEmpty() ? null : sid.trim();
+        selectedPersonId = person == null || person.trim().isEmpty() ? null : person.trim();
+    }
+
     private Api(String token, String cookie, String studentId) {
         this.token = token;
         this.cookie = cookie;
@@ -69,10 +79,13 @@ final class Api {
         if (!usable(token)) {
             throw new AuthException("Нет доступа МЭШ — нужно войти в школу.");
         }
-        String sid = m.get("active_student");
-        if (sid != null) {
-            sid = sid.trim();
-            if (!sid.matches("\\d+")) sid = null;
+        String sid = selectedStudentId;
+        if (sid == null) {
+            sid = m.get("active_student");
+            if (sid != null) {
+                sid = sid.trim();
+                if (!sid.matches("\\d+")) sid = null;
+            }
         }
         return new Api(token, Cookies.header(), sid);
     }
@@ -184,6 +197,7 @@ final class Api {
     }
 
     String studentId() throws ApiException, AuthException {
+        if (selectedStudentId != null) return selectedStudentId;
         if (studentId != null) return studentId;
         JSONObject p = profile();
         JSONObject prof = p.optJSONObject("profile");
@@ -294,6 +308,29 @@ final class Api {
         JSONObject o = get("/marks", p);
         JSONArray a = o.optJSONArray("payload");
         return a == null ? new JSONArray() : a;
+    }
+
+    /** Посещаемость: пропуски и опоздания за диапазон. */
+    JSONObject attendance(String from, String to)
+            throws ApiException, AuthException {
+        Map<String, String> p = new LinkedHashMap<>();
+        p.put("student_id", studentId());
+        p.put("from", from);
+        p.put("to", to);
+        return get("/attendance", p);
+    }
+
+    /** Итоговые оценки по предмету: периоды и выставленные баллы. */
+    JSONObject subjectMarks(String subjectId)
+            throws ApiException, AuthException {
+        Map<String, String> p = new LinkedHashMap<>();
+        p.put("student_id", studentId());
+        p.put("subject_id", subjectId);
+        return get("/subject_marks/for_subject", p);
+    }
+
+    JSONArray academicYears() throws ApiException, AuthException {
+        return getArray(EJ_CORE, "/academic_years", null);
     }
 
     /**
@@ -416,6 +453,7 @@ final class Api {
     }
 
     String personId() throws ApiException, AuthException {
+        if (selectedPersonId != null) return selectedPersonId;
         if (personId != null) return personId;
         String p = Cookies.map().get("student_person_id");
         if (p == null) p = "";
