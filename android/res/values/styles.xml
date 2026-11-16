@@ -22,4 +22,27 @@
         <item name="android:textColorSecondary">#7A7365</item>
         <item name="android:windowIsFloating">true</item>
     </style>
+
+    <style name="AppThemeDark" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#171613</item>
+        <item name="android:colorBackground">#171613</item>
+        <item name="android:colorAccent">#8FB0D4</item>
+        <item name="android:colorPrimary">#8FB0D4</item>
+        <item name="android:colorPrimaryDark">#171613</item>
+        <item name="android:statusBarColor">#171613</item>
+        <item name="android:navigationBarColor">#171613</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:textColorPrimary">#EAE3D5</item>
+        <item name="android:textColorSecondary">#A79D8B</item>
+        <item name="android:alertDialogTheme">@style/AppDialogDark</item>
+    </style>
+
+    <style name="AppDialogDark" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg_dark</item>
+        <item name="android:colorAccent">#8FB0D4</item>
+        <item name="android:textColorPrimary">#EAE3D5</item>
+        <item name="android:textColorSecondary">#A79D8B</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
 </resources>

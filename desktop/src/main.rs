@@ -7,8 +7,8 @@ mod views;
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
 use api::{
-    AttendanceDay, ClassRank, Client, CookieFile, Day, Homework, Mark, MarkDetails, Profile,
-    SubjectMarks, SubjectRank,
+    AttendanceDay, ClassRank, Client, CookieFile, Day, Homework, Lesson, LessonDetails, Mark,
+    MarkDetails, Profile, SubjectMarks, SubjectRank,
 };
 use chrono::{Local, NaiveDate};
 use eframe::egui;
@@ -58,18 +58,13 @@ impl ThemeMode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum Load<T> {
+    #[default]
     Idle,
     Loading,
     Ready(T),
     Failed(String),
-}
-
-impl<T> Default for Load<T> {
-    fn default() -> Self {
-        Load::Idle
-    }
 }
 
 pub struct Slot<T> {
@@ -149,6 +144,7 @@ pub struct App {
     attendance: Slot<Vec<AttendanceDay>>,
     subject_marks: Slot<SubjectMarks>,
     mark_extra: Slot<MarkDetails>,
+    lesson_details: Slot<LessonDetails>,
 
     tab: Tab,
     day_date: NaiveDate,
@@ -171,12 +167,15 @@ pub struct App {
     cdz: Option<(String, Receiver<api::Result<String>>)>,
     /// Для какой оценки уже запрошены подробности.
     mark_extra_for: Option<String>,
+    /// Для какого урока уже запрошены подробности.
+    lesson_for: Option<String>,
 }
 
 #[derive(Clone)]
 pub enum Detail {
     Hw(Homework),
     Mark(Mark),
+    Lesson(Lesson),
 }
 
 fn settings_path() -> Option<std::path::PathBuf> {
@@ -223,6 +222,7 @@ impl App {
             attendance: Slot::default(),
             subject_marks: Slot::default(),
             mark_extra: Slot::default(),
+            lesson_details: Slot::default(),
             tab: Tab::Day,
             day_date: api::today(),
             week_start: api::week_start(api::today()),
@@ -240,6 +240,7 @@ impl App {
             notice: None,
             cdz: None,
             mark_extra_for: None,
+            lesson_for: None,
         };
         // Отладочные флаги: удобно открыть нужный экран для проверки.
         if let Ok(t) = std::env::var("SCH_TAB") {
@@ -283,6 +284,8 @@ impl App {
                     self.attendance.reset();
                     self.subject_marks.reset();
                     self.mark_extra.reset();
+                    self.lesson_details.reset();
+                    self.lesson_for = None;
                     self.subject = None;
                     self.load_profile(ctx);
                     self.load_day(ctx);
@@ -383,6 +386,16 @@ impl App {
             return;
         };
         self.subject_marks.spawn(ctx, move || c.subject_marks(id));
+    }
+
+    fn load_lesson(&mut self, ctx: &Context, id: String) {
+        if id.is_empty() {
+            return;
+        }
+        let Some(c) = self.client.clone() else {
+            return;
+        };
+        self.lesson_details.spawn(ctx, move || c.lesson_details(&id));
     }
 
     fn load_mark_extra(&mut self, ctx: &Context, id: String) {
@@ -502,6 +515,7 @@ impl App {
         self.attendance.poll();
         self.subject_marks.poll();
         self.mark_extra.poll();
+        self.lesson_details.poll();
     }
 
     /// Открыть цифровое задание: сначала берём ссылку у МЭШ, потом отдаём браузеру.
@@ -607,6 +621,18 @@ impl eframe::App for App {
             }
         }
 
+        let want_lesson = match &self.detail {
+            Some(Detail::Lesson(l)) => Some(l.id.clone()),
+            _ => None,
+        };
+        if want_lesson != self.lesson_for {
+            self.lesson_for = want_lesson.clone();
+            self.lesson_details.reset();
+            if let Some(id) = want_lesson {
+                self.load_lesson(ctx, id);
+            }
+        }
+
         if self.subject.is_some() {
             let mut open = true;
             let name = self
@@ -643,6 +669,7 @@ impl eframe::App for App {
             let title = match &d {
                 Detail::Hw(_) => "Домашнее задание",
                 Detail::Mark(_) => "Оценка",
+                Detail::Lesson(_) => "Урок",
             };
             egui::Window::new(title)
                 .open(&mut open)
@@ -661,6 +688,7 @@ impl eframe::App for App {
                 .show(ctx, |ui| match &d {
                     Detail::Hw(h) => views::hw_details(self, ui, &p, h, ctx),
                     Detail::Mark(m) => views::mark_details(self, ui, &p, m),
+                    Detail::Lesson(l) => views::lesson_details(self, ui, &p, l),
                 });
             if !open {
                 self.detail = None;
@@ -922,6 +950,17 @@ impl App {
 
     pub fn mark_extra_slot(&self) -> &Slot<MarkDetails> {
         &self.mark_extra
+    }
+
+    pub fn lesson_slot(&self) -> &Slot<LessonDetails> {
+        &self.lesson_details
+    }
+
+    pub fn retry_lesson(&mut self, ctx: &Context) {
+        if let Some(Detail::Lesson(l)) = self.detail.clone() {
+            self.lesson_details.reset();
+            self.load_lesson(ctx, l.id);
+        }
     }
 
     pub fn cdz_busy(&self) -> bool {

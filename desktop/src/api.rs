@@ -719,6 +719,129 @@ impl Client {
         })
     }
 
+    /// Подробности урока: тема, ДЗ, материалы, комментарии учителя.
+    pub fn lesson_details(&self, id: &str) -> Result<LessonDetails> {
+        let sid = self.student_id()?;
+        let mut params = vec![
+            ("student_id", sid),
+            ("type", "LESSON".to_string()),
+        ];
+        if let Some(p) = self.cookie("student_person_id").filter(|p| !p.is_empty()) {
+            params.push(("person_id", p));
+        }
+        let v = self.get(&format!("/lesson_schedule_items/{}", enc(id)), &params)?;
+        let details = v.get("details").cloned().unwrap_or(Value::Null);
+
+        let mut homeworks = Vec::new();
+        for h in array(v.get("lesson_homeworks")) {
+            let text = {
+                let t = s(&h, "homework");
+                if t.is_empty() {
+                    s(&h, "description")
+                } else {
+                    t
+                }
+            };
+            if !text.is_empty() {
+                homeworks.push(text);
+            }
+        }
+
+        let mut materials = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut push_material = |m: &Value, materials: &mut Vec<LessonMaterial>| {
+            let uuid = s(m, "uuid");
+            if !uuid.is_empty() && !seen.insert(uuid.clone()) {
+                return;
+            }
+            let mut kind = s(m, "type_name");
+            if kind.is_empty() {
+                kind = s(m, "type");
+            }
+            let mut title = s(m, "title");
+            if title.is_empty() {
+                title = if kind == "Другое" {
+                    "Цифровое задание".to_string()
+                } else {
+                    kind.clone()
+                };
+            }
+            if title.is_empty() {
+                title = s(m, "description");
+            }
+            let mut url = String::new();
+            for u in array(m.get("urls")) {
+                let candidate = s(&u, "url");
+                if !candidate.is_empty() {
+                    url = candidate;
+                    break;
+                }
+            }
+            if title.is_empty() && url.is_empty() {
+                return;
+            }
+            let kind = if kind == "Другое" { String::new() } else { kind };
+            let action = s(m, "action_name");
+            if let Some(same) = materials
+                .iter_mut()
+                .find(|x| x.title == title && x.url == url && x.action == action && x.kind == kind)
+            {
+                same.count += 1;
+                return;
+            }
+            materials.push(LessonMaterial {
+                title,
+                kind,
+                url,
+                action,
+                uuid,
+                count: 1,
+            });
+        };
+        for h in array(v.get("lesson_homeworks")) {
+            for m in array(h.get("additional_materials")) {
+                push_material(&m, &mut materials);
+            }
+        }
+        for m in array(details.get("additional_materials")) {
+            push_material(&m, &mut materials);
+        }
+
+        let mut teacher_comments = Vec::new();
+        for c in array(v.get("teacher_comments")) {
+            let text = match c {
+                Value::String(t) => t.clone(),
+                other => {
+                    let t = s(&other, "comment");
+                    if t.is_empty() {
+                        s(&other, "text")
+                    } else {
+                        t
+                    }
+                }
+            };
+            if !text.is_empty() {
+                teacher_comments.push(text);
+            }
+        }
+
+        Ok(LessonDetails {
+            topic: s(&details, "lesson_topic"),
+            teacher: teacher(v.get("teacher")),
+            room: s(&v, "room_number"),
+            building: s(&v, "building_name"),
+            begin: s(&v, "begin_time"),
+            end: s(&v, "end_time"),
+            kind: s(&v, "lesson_type"),
+            missed: v.get("is_missed_lesson").and_then(Value::as_bool).unwrap_or(false),
+            comment: s(&v, "comment"),
+            teacher_comments,
+            homeworks,
+            materials,
+            marks: normalize_marks(&array(v.get("marks"))),
+        })
+    }
+
     fn cookie(&self, name: &str) -> Option<String> {
         self.cookie_header
             .split("; ")
@@ -842,6 +965,7 @@ pub struct Day {
 
 #[derive(Debug, Clone, Default)]
 pub struct Lesson {
+    pub id: String,
     pub n: usize,
     pub begin: String,
     pub end: String,
@@ -852,6 +976,33 @@ pub struct Lesson {
     pub teacher: String,
     pub marks: Vec<String>,
     pub homework: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LessonMaterial {
+    pub title: String,
+    pub kind: String,
+    pub url: String,
+    pub action: String,
+    pub uuid: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LessonDetails {
+    pub topic: String,
+    pub teacher: String,
+    pub room: String,
+    pub building: String,
+    pub begin: String,
+    pub end: String,
+    pub kind: String,
+    pub missed: bool,
+    pub comment: String,
+    pub teacher_comments: Vec<String>,
+    pub homeworks: Vec<String>,
+    pub materials: Vec<LessonMaterial>,
+    pub marks: Vec<Mark>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1108,6 +1259,7 @@ pub fn normalize_day(full: &Value, short_payload: &[Value], hw_payload: &[Value]
             .collect();
 
         let row = Lesson {
+            id: item_id.clone(),
             begin: s(&a, "begin_time"),
             end: s(&a, "end_time"),
             subject,
@@ -1373,7 +1525,7 @@ pub fn normalize_homeworks(
             entry: s(x, "homework_entry_id"),
         });
     }
-    out.sort_by(|a, b| (a.date.clone(), a.lesson_time.clone()).cmp(&(b.date.clone(), b.lesson_time.clone())));
+    out.sort_by_key(|a| (a.date.clone(), a.lesson_time.clone()));
     out
 }
 
@@ -1619,7 +1771,7 @@ pub fn search(
 }
 
 pub fn first_line(text: &str, max: usize) -> String {
-    let flat = text.replace('\n', " ").replace('\r', " ");
+    let flat = text.replace(['\n', '\r'], " ");
     let flat = flat.split_whitespace().collect::<Vec<_>>().join(" ");
     if flat.chars().count() <= max {
         flat

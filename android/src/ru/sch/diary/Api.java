@@ -12,6 +12,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -249,6 +250,9 @@ final class Api {
         // В самом ДЗ нет времени окончания урока — берём его из короткого
         // расписания на те же даты (один запрос на весь диапазон).
         Map<String, String> beginByDateEnd = new LinkedHashMap<>();
+        // В диапазоне ДЗ время урока часто 00:00: подставляем конец урока
+        // из расписания по дате и предмету.
+        Map<String, String> endByDateSubject = new LinkedHashMap<>();
         Set<String> dates = new LinkedHashSet<>();
         for (int i = 0; i < payload.length(); i++) {
             JSONObject x = payload.optJSONObject(i);
@@ -272,6 +276,14 @@ final class Api {
                         if (!dd.isEmpty() && !b.isEmpty() && !e.isEmpty()) {
                             beginByDateEnd.put(dd + "|" + e, b);
                         }
+                        String subj = s(l, "subject");
+                        if (subj.isEmpty()) subj = s(l, "subject_name").trim();
+                        if (!dd.isEmpty() && !subj.isEmpty() && !e.isEmpty()) {
+                            String key = dd + "|" + subj;
+                            if (!endByDateSubject.containsKey(key)) {
+                                endByDateSubject.put(key, e);
+                            }
+                        }
                     }
                 }
             } catch (ApiException | AuthException ignored) {
@@ -286,6 +298,12 @@ final class Api {
             JSONObject h = normalizeHomework(x);
             String begin = beginByDateEnd.get(s(h, "date") + "|" + s(h, "lesson_time"));
             if (begin != null) put(h, "lesson_start", begin);
+            String end = s(h, "lesson_time");
+            if (end.isEmpty() || "00:00".equals(end)) {
+                String fixed = endByDateSubject.get(s(h, "date") + "|"
+                        + s(h, "subject").trim());
+                if (fixed != null) put(h, "lesson_time", fixed);
+            }
             list.add(h);
         }
         Collections.sort(list, new Comparator<JSONObject>() {
@@ -438,6 +456,43 @@ final class Api {
         JSONArray hw = new JSONArray();
         if (!dayDate.isEmpty()) hw = homeworks(dayDate, dayDate);
         return normalizeDay(full, shortPayload, hw);
+    }
+
+    /**
+     * Неделя целиком: темы и ДЗ качаются одним запросом на диапазон,
+     * расписание каждого дня — отдельно, как в sch week.
+     */
+    JSONArray week(String start, int days) throws ApiException, AuthException {
+        LocalDate d0 = LocalDate.parse(start);
+        List<String> dates = new ArrayList<>();
+        for (int i = 0; i < days; i++) dates.add(d0.plusDays(i).toString());
+
+        JSONArray shortPayload = new JSONArray();
+        try {
+            shortPayload = scheduleShort(dates);
+        } catch (ApiException ignored) {
+            // темы не критичны
+        }
+
+        JSONArray hw = new JSONArray();
+        try {
+            hw = homeworks(dates.get(0), dates.get(dates.size() - 1));
+        } catch (ApiException ignored) {
+            // ДЗ не критичны
+        }
+
+        JSONArray out = new JSONArray();
+        for (String d : dates) {
+            try {
+                out.put(normalizeDay(scheduleDay(d), shortPayload, hw));
+            } catch (ApiException e) {
+                JSONObject row = new JSONObject();
+                put(row, "date", d);
+                put(row, "error", e.getMessage() == null ? "нет данных" : e.getMessage());
+                out.put(row);
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------ прикрепление работы
@@ -724,12 +779,17 @@ final class Api {
 
         JSONArray homeworks = new JSONArray();
         Map<String, String> beginByEnd = new LinkedHashMap<>();
+        Map<String, String> endBySubject = new LinkedHashMap<>();
         for (int i = 0; i < lessons.length(); i++) {
             JSONObject l = lessons.optJSONObject(i);
             if (l == null) continue;
             String b = s(l, "begin");
             String e = s(l, "end");
             if (!b.isEmpty() && !e.isEmpty()) beginByEnd.put(e, b);
+            String subj = s(l, "subject").trim();
+            if (!subj.isEmpty() && !e.isEmpty() && !endBySubject.containsKey(subj)) {
+                endBySubject.put(subj, e);
+            }
         }
         List<JSONObject> hwList = new ArrayList<>();
         for (int i = 0; i < hwPayload.length(); i++) {
@@ -739,6 +799,17 @@ final class Api {
             JSONObject h = normalizeHomework(x);
             String begin = beginByEnd.get(s(h, "lesson_time"));
             if (begin != null) put(h, "lesson_start", begin);
+            // в диапазоне ДЗ время урока часто 00:00 — берём конец урока
+            // из расписания этого дня по предмету
+            String end = s(h, "lesson_time");
+            if (end.isEmpty() || "00:00".equals(end)) {
+                String fixed = endBySubject.get(s(h, "subject").trim());
+                if (fixed != null) {
+                    put(h, "lesson_time", fixed);
+                    String b2 = beginByEnd.get(fixed);
+                    if (b2 != null) put(h, "lesson_start", b2);
+                }
+            }
             hwList.add(h);
         }
         Collections.sort(hwList, new Comparator<JSONObject>() {

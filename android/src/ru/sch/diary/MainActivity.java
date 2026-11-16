@@ -1,5 +1,6 @@
 package ru.sch.diary;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
@@ -12,6 +13,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -32,7 +34,9 @@ import android.net.Uri;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -52,6 +56,7 @@ import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.DatePicker;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -91,25 +96,81 @@ public final class MainActivity extends Activity {
 
     // ------------------------------------------------------------- палитра
 
-    private static final int BG         = 0xFFF5EFE2;
-    private static final int SURFACE    = 0xFFFFFCF4;
-    private static final int SURFACE2   = 0xFFEDE5D3;
-    private static final int TEXT       = 0xFF2B2A26;
-    private static final int MUTED      = 0xFF7A7365;
-    private static final int ACCENT     = 0xFF34577D;
-    private static final int ACCENT2    = 0xFF34577D;
-    private static final int ACCENT_SOFT= 0x1A34577D;
-    private static final int GREEN      = 0xFF2F6B4F;
-    private static final int AMBER      = 0xFF9A6A22;
-    private static final int RED        = 0xFFB0403A;
-    private static final int DIVIDER    = 0xFFD9CEB8;
-    private static final int STROKE     = 0xFFD3C7AE;
-    private static final int WHITE      = 0xFFFFFFFF;
+    // Палитра — поля, а не константы: бумага бывает и светлой, и вечерней.
+    private int BG, SURFACE, SURFACE2, TEXT, MUTED;
+    private int ACCENT, ACCENT2, ACCENT_SOFT;
+    private int GREEN, AMBER, RED, DIVIDER, STROKE, RULE;
+    private int CURRENT, MARK4, ERR_BG, ERR_STROKE;
+    private int ON_ACCENT;               // текст на акцентной плашке
+    private int[] SUBJECT_COLORS;
+    private boolean darkTheme;
 
-    private static final int[] SUBJECT_COLORS = {
+    private static final int[] SUBJECT_COLORS_LIGHT = {
             0xFF34577D, 0xFF2F6B4F, 0xFF9A6A22, 0xFF6F4A75,
             0xFF2F6B6B, 0xFF9A4A5E, 0xFF9A5A32
     };
+
+    private static final int[] SUBJECT_COLORS_DARK = {
+            0xFF8FB0D4, 0xFF85B394, 0xFFD6A960, 0xFFB79BC4,
+            0xFF7FB8B8, 0xFFD0919F, 0xFFC99A72
+    };
+
+    private void applyPalette(boolean dark) {
+        darkTheme = dark;
+        if (dark) {
+            BG = 0xFF171613;
+            SURFACE = 0xFF201E1A;
+            SURFACE2 = 0xFF2A2721;
+            TEXT = 0xFFEAE3D5;
+            MUTED = 0xFFA79D8B;
+            ACCENT = 0xFF8FB0D4;
+            ACCENT2 = 0xFF8FB0D4;
+            ACCENT_SOFT = 0x2A8FB0D4;
+            GREEN = 0xFF85B394;
+            AMBER = 0xFFD6A960;
+            RED = 0xFFD9827A;
+            DIVIDER = 0xFF35312A;
+            STROKE = 0xFF3E392F;
+            RULE = 0xFF4A4438;
+            CURRENT = 0xFF2C2A20;
+            MARK4 = 0xFFA8C98A;
+            ERR_BG = 0xFF33211D;
+            ERR_STROKE = 0xFF5A3A31;
+            ON_ACCENT = 0xFF171613;
+            SUBJECT_COLORS = SUBJECT_COLORS_DARK;
+        } else {
+            BG = 0xFFF5EFE2;
+            SURFACE = 0xFFFFFCF4;
+            SURFACE2 = 0xFFEDE5D3;
+            TEXT = 0xFF2B2A26;
+            MUTED = 0xFF7A7365;
+            ACCENT = 0xFF34577D;
+            ACCENT2 = 0xFF34577D;
+            ACCENT_SOFT = 0x1A34577D;
+            GREEN = 0xFF2F6B4F;
+            AMBER = 0xFF9A6A22;
+            RED = 0xFFB0403A;
+            DIVIDER = 0xFFD9CEB8;
+            STROKE = 0xFFD3C7AE;
+            RULE = 0xFFC9BDA6;
+            CURRENT = 0xFFFFF8E6;
+            MARK4 = 0xFF4E7A3A;
+            ERR_BG = 0xFFF7E7E2;
+            ERR_STROKE = 0xFFD9B3A8;
+            ON_ACCENT = 0xFFFFFFFF;
+            SUBJECT_COLORS = SUBJECT_COLORS_LIGHT;
+        }
+    }
+
+    /** Тема из настроек: auto следует за системой, light/dark — принудительно. */
+    private boolean resolveDark() {
+        String mode = prefs.getString("theme", "auto");
+        if ("dark".equals(mode)) return true;
+        if ("light".equals(mode)) return false;
+        int night = getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK;
+        return night == Configuration.UI_MODE_NIGHT_YES;
+    }
 
     private static final String[] MONTHS = {
             "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -132,6 +193,7 @@ public final class MainActivity extends Activity {
     private static final int REQ_CAMERA = 43;
     private static final int REQ_CAMERA_PERM = 44;
     private static final int REQ_WEB_FILE = 45;
+    private static final int REQ_NOTIF = 46;
 
     // ------------------------------------------------------------- состояние
 
@@ -145,7 +207,9 @@ public final class MainActivity extends Activity {
     private TextView appSub;
     private ImageView refreshBtn;
 
-    private int tab;                       // 0 день, 1 оценки, 2 ещё
+    private static final int TAB_DAY = 0, TAB_WEEK = 1, TAB_HW = 2,
+            TAB_MARKS = 3, TAB_MORE = 4;
+    private int tab;
 
     private String currentDate;
     private JSONObject dayData;
@@ -164,6 +228,14 @@ public final class MainActivity extends Activity {
     private int marksGen;
     private int marksDays = 14;
     private int marksView;                 // 0 оценки, 1 рейтинг, 2 итоговые
+
+    private JSONArray weekData;
+    private String weekStart;
+    private String weekLoaded;
+    private boolean weekLoading;
+    private boolean weekAuth;
+    private Exception weekError;
+    private int weekGen;
 
     private JSONArray finalData;
     private boolean finalLoading;
@@ -213,18 +285,23 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle state) {
+        prefs = getSharedPreferences("sch", MODE_PRIVATE);
+        boolean dark = resolveDark();
+        applyPalette(dark);
+        setTheme(dark ? R.style.AppThemeDark : R.style.AppTheme);
         super.onCreate(state);
+
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         if (Build.VERSION.SDK_INT >= 26) {
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                            | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            int flags = darkTheme ? 0
+                    : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                    | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            getWindow().getDecorView().setSystemUiVisibility(flags);
         }
 
         exec = Executors.newSingleThreadExecutor();
         ui = new Handler(Looper.getMainLooper());
-        prefs = getSharedPreferences("sch", MODE_PRIVATE);
 
         marksDays = prefs.getInt("marksDays", 14);
         hwDays = prefs.getInt("hwDays", 14);
@@ -235,10 +312,14 @@ public final class MainActivity extends Activity {
         currentDate = looksLikeDate(saved) ? saved : today();
         dayData = cacheGet("day3:" + currentDate);
 
+        if (Notify.enabled(this)) Notify.schedule(this);
+
         loadFonts();
         buildShell();
         bootstrapCookies();
-        selectTab(0);
+        // Возврат на ту же вкладку: смена темы пересоздаёт Activity.
+        int savedTab = prefs.getInt("tab", TAB_DAY);
+        selectTab(savedTab >= TAB_DAY && savedTab <= TAB_MORE ? savedTab : TAB_DAY);
         fetchProfile(false);
     }
 
@@ -310,9 +391,10 @@ public final class MainActivity extends Activity {
         refreshBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 v.animate().rotationBy(360f).setDuration(500).start();
-                if (tab == 0) scheduleDayLoad(true);
-                else if (tab == 1) fetchHw(true);
-                else if (tab == 2) fetchMarks(true);
+                if (tab == TAB_DAY) scheduleDayLoad(true);
+                else if (tab == TAB_WEEK) fetchWeek(true);
+                else if (tab == TAB_HW) fetchHw(true);
+                else if (tab == TAB_MARKS) fetchMarks(true);
                 else fetchProfile(true);
             }
         });
@@ -320,7 +402,7 @@ public final class MainActivity extends Activity {
         root.addView(bar);
 
         View rule1 = new View(this);
-        rule1.setBackgroundColor(0xFFC9BDA6);
+        rule1.setBackgroundColor(RULE);
         root.addView(rule1, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
         View ruleGap = new View(this);
@@ -352,10 +434,11 @@ public final class MainActivity extends Activity {
 
     private void buildNav() {
         navBar.removeAllViews();
-        navBar.addView(navItem(R.drawable.ic_calendar, "День", 0));
-        navBar.addView(navItem(R.drawable.ic_homework, "ДЗ", 1));
-        navBar.addView(navItem(R.drawable.ic_star, "Оценки", 2));
-        navBar.addView(navItem(R.drawable.ic_more, "Ещё", 3));
+        navBar.addView(navItem(R.drawable.ic_calendar, "День", TAB_DAY));
+        navBar.addView(navItem(R.drawable.ic_week, "Неделя", TAB_WEEK));
+        navBar.addView(navItem(R.drawable.ic_homework, "ДЗ", TAB_HW));
+        navBar.addView(navItem(R.drawable.ic_star, "Оценки", TAB_MARKS));
+        navBar.addView(navItem(R.drawable.ic_more, "Ещё", TAB_MORE));
     }
 
     private View navItem(int iconRes, String label, final int index) {
@@ -392,22 +475,27 @@ public final class MainActivity extends Activity {
 
     private void selectTab(int index) {
         tab = index;
+        prefs.edit().putInt("tab", index).apply();
         buildNav();
         renderTab();
     }
 
     private void updateChrome() {
-        if (tab == 0) {
+        if (tab == TAB_DAY) {
             appTitle.setText("Дневник");
             String sub = prettyTitle(currentDate);
             if (!studentClass.isEmpty()) sub += "  ·  " + studentClass;
             appSub.setText(sub);
-        } else if (tab == 1) {
+        } else if (tab == TAB_WEEK) {
+            appTitle.setText("Неделя");
+            String start = weekStart != null ? weekStart : mondayOf(today());
+            appSub.setText(weekRangeLabel(start));
+        } else if (tab == TAB_HW) {
             appTitle.setText("Домашнее задание");
             appSub.setText(hwPast
                     ? "прошедшие · " + hwDays + " дней"
                     : "с завтра на " + hwDays + " дней");
-        } else if (tab == 2) {
+        } else if (tab == TAB_MARKS) {
             appTitle.setText("Оценки");
             appSub.setText("за последние " + marksDays + " дней");
         } else {
@@ -421,17 +509,22 @@ public final class MainActivity extends Activity {
     private void renderTab() {
         updateChrome();
         host.removeAllViews();
-        if (tab == 0) {
+        if (tab == TAB_DAY) {
             host.addView(buildDay());
             if (dayData == null && dayError == null && !dayAuth && !dayLoading) {
                 scheduleDayLoad(false);
             }
-        } else if (tab == 1) {
+        } else if (tab == TAB_WEEK) {
+            host.addView(buildWeek());
+            if (weekData == null && weekError == null && !weekAuth && !weekLoading) {
+                fetchWeek(false);
+            }
+        } else if (tab == TAB_HW) {
             host.addView(buildHomework());
             if (hwData == null && hwError == null && !hwAuth && !hwLoading) {
                 fetchHw(false);
             }
-        } else if (tab == 2) {
+        } else if (tab == TAB_MARKS) {
             host.addView(buildMarks());
             if (marksData == null && marksError == null && !marksAuth && !marksLoading) {
                 fetchMarks(false);
@@ -737,7 +830,7 @@ public final class MainActivity extends Activity {
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setPadding(dp(12), dp(11), dp(12), dp(11));
         card.setBackground(current
-                ? roundBg(0xFFFFF8E6, 2, ACCENT)
+                ? roundBg(CURRENT, 2, ACCENT)
                 : roundBg(SURFACE, 2, STROKE));
         card.setClickable(true);
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
@@ -807,9 +900,9 @@ public final class MainActivity extends Activity {
         }
 
         if (Api.b(l, "cancelled")) {
-            body.addView(tag("отменён", RED, 0x1AB0403A));
+            body.addView(tag("отменён", RED, soft(RED)));
         } else if (Api.b(l, "replaced")) {
-            body.addView(tag("замена", AMBER, 0x1A9A6A22));
+            body.addView(tag("замена", AMBER, soft(AMBER)));
         }
 
         String hw = Api.s(l, "homework").trim();
@@ -817,7 +910,7 @@ public final class MainActivity extends Activity {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setPadding(0, dp(7), 0, 0);
-            row.addView(tag("ДЗ", AMBER, 0x1A9A6A22));
+            row.addView(tag("ДЗ", AMBER, soft(AMBER)));
             TextView t = tv(hw, 13, AMBER, false);
             t.setMaxLines(2);
             t.setEllipsize(TextUtils.TruncateAt.END);
@@ -950,7 +1043,7 @@ public final class MainActivity extends Activity {
         if (files > 0) meta.addView(tag(files + " " + plural(files, "файл",
                 "файла", "файлов"), MUTED, SURFACE2));
         if (Api.b(h, "has_teacher_answer")) {
-            meta.addView(tag("ответ учителя", GREEN, 0x1A2F6B4F));
+            meta.addView(tag("ответ учителя", GREEN, soft(GREEN)));
         }
         if (meta.getChildCount() > 0) card.addView(meta);
 
@@ -1045,7 +1138,7 @@ public final class MainActivity extends Activity {
 
     private View hwViewChip(String label, final boolean past) {
         boolean sel = hwPast == past;
-        TextView t = tv(label, 13, sel ? WHITE : TEXT, sel);
+        TextView t = tv(label, 13, sel ? ON_ACCENT : TEXT, sel);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(16), dp(8), dp(16), dp(8));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
@@ -1073,7 +1166,7 @@ public final class MainActivity extends Activity {
 
     private View hwPeriodChip(String label, final int days) {
         boolean sel = hwDays == days;
-        TextView t = tv(label, 12, sel ? WHITE : TEXT, sel);
+        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
@@ -1175,13 +1268,13 @@ public final class MainActivity extends Activity {
                     hwFrom = from;
                     hwTo = to;
                     hwLoading = false;
-                    if (tab == 1) renderTab();
+                    if (tab == TAB_HW) renderTab();
                 } catch (Exception ignored) {
                 }
             }
         }
 
-        if (tab == 1) renderTab();
+        if (tab == TAB_HW) renderTab();
         if (exec.isShutdown()) return;
 
         exec.execute(new Runnable() {
@@ -1197,7 +1290,7 @@ public final class MainActivity extends Activity {
                             hwData = items;
                             hwFrom = from;
                             hwTo = to;
-                            if (tab == 1) renderTab();
+                            if (tab == TAB_HW) renderTab();
                         }
                     });
                 } catch (final Api.AuthException e) {
@@ -1206,7 +1299,7 @@ public final class MainActivity extends Activity {
                             if (gen != hwGen) return;
                             hwLoading = false;
                             hwAuth = true;
-                            if (tab == 1) renderTab();
+                            if (tab == TAB_HW) renderTab();
                         }
                     });
                 } catch (final Exception e) {
@@ -1215,7 +1308,7 @@ public final class MainActivity extends Activity {
                             if (gen != hwGen) return;
                             hwLoading = false;
                             hwError = e;
-                            if (tab == 1) renderTab();
+                            if (tab == TAB_HW) renderTab();
                         }
                     });
                 }
@@ -1307,7 +1400,7 @@ public final class MainActivity extends Activity {
 
     private View viewChip(String label, final int view) {
         boolean sel = marksView == view;
-        TextView t = tv(label, 13, sel ? WHITE : TEXT, sel);
+        TextView t = tv(label, 13, sel ? ON_ACCENT : TEXT, sel);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(16), dp(8), dp(16), dp(8));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
@@ -1331,7 +1424,7 @@ public final class MainActivity extends Activity {
 
     private View periodChip(String label, final int days) {
         boolean sel = marksDays == days;
-        TextView t = tv(label, 12, sel ? WHITE : TEXT, sel);
+        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
                 : roundBg(SURFACE, 3, STROKE));
@@ -1401,11 +1494,11 @@ public final class MainActivity extends Activity {
             if (cached != null) {
                 finalData = cached;
                 finalLoading = false;
-                if (tab == 2) renderTab();
+                if (tab == TAB_MARKS) renderTab();
                 return;
             }
         }
-        if (tab == 2 && marksView == 2) renderTab();
+        if (tab == TAB_MARKS && marksView == 2) renderTab();
         if (exec.isShutdown()) return;
 
         final int gen = ++finalGen;
@@ -1493,7 +1586,7 @@ public final class MainActivity extends Activity {
                             finalLoading = false;
                             finalError = null;
                             finalData = res;
-                            if (tab == 2) renderTab();
+                            if (tab == TAB_MARKS) renderTab();
                         }
                     });
                 } catch (final Exception e) {
@@ -1503,7 +1596,7 @@ public final class MainActivity extends Activity {
                             finalLoading = false;
                             finalAuth = e instanceof Api.AuthException;
                             finalError = e;
-                            if (tab == 2) renderTab();
+                            if (tab == TAB_MARKS) renderTab();
                         }
                     });
                 }
@@ -1831,7 +1924,7 @@ public final class MainActivity extends Activity {
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         if (count5 > 0) row1.addView(countTag("5", count5, GREEN));
-        if (count4 > 0) row1.addView(countTag("4", count4, 0xFF8BC34A));
+        if (count4 > 0) row1.addView(countTag("4", count4, MARK4));
         if (count3 > 0) row1.addView(countTag("3", count3, AMBER));
         if (count2 > 0) row1.addView(countTag("2", count2, RED));
         if (other > 0) row1.addView(countTag("·", other, MUTED));
@@ -2041,10 +2134,10 @@ public final class MainActivity extends Activity {
         LinearLayout flags = new LinearLayout(this);
         flags.setOrientation(LinearLayout.HORIZONTAL);
         flags.setPadding(0, dp(6), 0, 0);
-        if (Api.b(m, "is_exam")) flags.addView(tag("экзамен", RED, 0x1AB0403A));
+        if (Api.b(m, "is_exam")) flags.addView(tag("экзамен", RED, soft(RED)));
         if (Api.b(m, "is_point")) flags.addView(tag("балл", ACCENT, ACCENT_SOFT));
-        if (Api.b(m, "comment_exists")) flags.addView(tag("комментарий", AMBER, 0x1A9A6A22));
-        if (Api.b(m, "has_files")) flags.addView(tag("файлы", GREEN, 0x1A2F6B4F));
+        if (Api.b(m, "comment_exists")) flags.addView(tag("комментарий", AMBER, soft(AMBER)));
+        if (Api.b(m, "has_files")) flags.addView(tag("файлы", GREEN, soft(GREEN)));
         if (flags.getChildCount() > 0) head.addView(flags);
 
         box.addView(top);
@@ -2279,7 +2372,7 @@ public final class MainActivity extends Activity {
     private int markInk(String value) {
         char c = value == null || value.isEmpty() ? '?' : value.charAt(0);
         if (c == '5') return GREEN;
-        if (c == '4') return 0xFF4E7A3A;
+        if (c == '4') return MARK4;
         if (c == '3') return AMBER;
         if (c == '2') return RED;
         return MUTED;
@@ -2607,6 +2700,50 @@ public final class MainActivity extends Activity {
 
     // ------------------------------------------------------------- ещё
 
+    private void toggleNotifications() {
+        if (Notify.enabled(this)) {
+            Notify.enable(this, false);
+            toast("Уведомления выключены");
+            renderTab();
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(
+                Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQ_NOTIF);
+            return;
+        }
+        enableNotifications();
+    }
+
+    private void enableNotifications() {
+        Notify.enable(this, true);
+        toast("Уведомления включены");
+        renderTab();
+    }
+
+    private void themeDialog() {
+        final String[] labels = {"Как в системе", "Светлая бумага", "Тёмная бумага"};
+        final String[] values = {"auto", "light", "dark"};
+        String mode = prefs.getString("theme", "auto");
+        int sel = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(mode)) sel = i;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Тема")
+                .setSingleChoiceItems(labels, sel, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int which) {
+                        prefs.edit().putString("theme", values[which]).apply();
+                        d.dismiss();
+                        recreate();
+                    }
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
     private View buildMore() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -2633,6 +2770,23 @@ public final class MainActivity extends Activity {
         actions.addView(actionRow(R.drawable.ic_import, "Импорт cookies",
                 "Файл cookies.json с компьютера", false, new Runnable() {
                     @Override public void run() { importCookies(); }
+                }));
+        actions.addView(actionDivider());
+        actions.addView(actionRow(R.drawable.ic_search, "Поиск по дневнику",
+                "Задания, предметы и комментарии к оценкам", false, new Runnable() {
+                    @Override public void run() { openSearch(); }
+                }));
+        actions.addView(actionDivider());
+        actions.addView(actionRow(R.drawable.ic_bell, "Уведомления",
+                Notify.enabled(this)
+                        ? "Новые оценки и ДЗ · включены"
+                        : "Новые оценки и ДЗ · выключены", false, new Runnable() {
+                    @Override public void run() { toggleNotifications(); }
+                }));
+        actions.addView(actionDivider());
+        actions.addView(actionRow(R.drawable.ic_theme, "Тема",
+                darkTheme ? "Тёмная бумага" : "Светлая бумага", false, new Runnable() {
+                    @Override public void run() { themeDialog(); }
                 }));
         actions.addView(actionDivider());
         actions.addView(actionRow(R.drawable.ic_refresh, "Обновить профиль",
@@ -2664,7 +2818,7 @@ public final class MainActivity extends Activity {
         }
         content.addView(actions);
 
-        TextView footer = tv("OpenSchool · 1.5\nданные: school.mos.ru",
+        TextView footer = tv("OpenSchool · 1.6\nданные: school.mos.ru",
                 10, MUTED, false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(20), 0, 0);
@@ -2672,6 +2826,223 @@ public final class MainActivity extends Activity {
 
         scroll.addView(content);
         return scroll;
+    }
+
+    // ------------------------------------------------------------- поиск
+
+    private JSONArray searchHw;
+    private JSONArray searchMarks;
+    private String searchQuery = "";
+    private LinearLayout searchResults;
+    private TextView searchStatus;
+    private boolean searchAuth;
+    private Exception searchError;
+
+    private void openSearch() {
+        searchQuery = "";
+        searchHw = null;
+        searchMarks = null;
+        searchError = null;
+        searchAuth = false;
+
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(roundBg(BG, 4, STROKE));
+        root.setPadding(dp(16), dp(14), dp(16), dp(10));
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(tvSerif("Поиск", 21, TEXT, true),
+                new LinearLayout.LayoutParams(0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        ImageView close = icon(R.drawable.ic_close, MUTED, 18);
+        close.setPadding(dp(9), dp(9), dp(9), dp(9));
+        close.setBackground(rippleBg(0x00000000, 20));
+        close.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { d.dismiss(); }
+        });
+        head.addView(close, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        root.addView(head);
+
+        EditText input = new EditText(this);
+        input.setHint("Предмет, задание, комментарий");
+        input.setHintTextColor(MUTED);
+        input.setTextColor(TEXT);
+        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        input.setSingleLine(true);
+        input.setBackground(roundBg(SURFACE2, 3, STROKE));
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        ilp.topMargin = dp(10);
+        root.addView(input, ilp);
+
+        searchStatus = tv("Загружаю дневник…", 12, MUTED, false);
+        searchStatus.setPadding(0, dp(8), 0, 0);
+        root.addView(searchStatus);
+
+        searchResults = new LinearLayout(this);
+        searchResults.setOrientation(LinearLayout.VERTICAL);
+        searchResults.setPadding(0, dp(4), 0, dp(12));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(searchResults);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {
+            }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {
+            }
+            @Override public void afterTextChanged(Editable e) {
+                searchQuery = e.toString().trim();
+                renderSearchResults();
+            }
+        });
+
+        d.setContentView(root);
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(0x00000000));
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+        d.show();
+        input.requestFocus();
+        loadSearchData(d);
+    }
+
+    private void loadSearchData(final Dialog d) {
+        if (exec.isShutdown()) return;
+        exec.execute(new Runnable() {
+            @Override public void run() {
+                JSONArray hw = null;
+                JSONArray mk = null;
+                Exception err = null;
+                boolean auth = false;
+                try {
+                    Api api = Api.fromCookies();
+                    hw = api.homeworksRange(shiftDate(today(), -30),
+                            shiftDate(today(), 30));
+                    mk = api.marks(shiftDate(today(), -90), today());
+                } catch (Api.AuthException e) {
+                    auth = true;
+                } catch (Exception e) {
+                    err = e;
+                }
+                final JSONArray fhw = hw;
+                final JSONArray fmk = mk;
+                final Exception ferr = err;
+                final boolean fauth = auth;
+                ui.post(new Runnable() {
+                    @Override public void run() {
+                        if (!d.isShowing()) return;
+                        searchAuth = fauth;
+                        searchError = ferr;
+                        searchHw = fhw;
+                        searchMarks = fmk;
+                        searchStatus.setText(fauth ? "Нужен вход в МЭШ"
+                                : ferr != null ? "Не удалось загрузить дневник"
+                                : "Введите запрос");
+                        renderSearchResults();
+                    }
+                });
+            }
+        });
+    }
+
+    private void renderSearchResults() {
+        if (searchResults == null) return;
+        searchResults.removeAllViews();
+
+        if (searchAuth) {
+            searchResults.addView(authCard("Нужен вход в МЭШ",
+                    "Поиск работает по данным дневника — войдите в школу заново."));
+            return;
+        }
+        if (searchError != null) {
+            searchResults.addView(errorCard(searchError, new Runnable() {
+                @Override public void run() { searchStatus.setText("Повторите позже"); }
+            }));
+            return;
+        }
+
+        String q = searchQuery.toLowerCase(Locale.ROOT);
+        if (q.isEmpty()) return;
+        if (searchHw == null && searchMarks == null) return;
+
+        List<JSONObject> hwHits = new ArrayList<>();
+        if (searchHw != null) {
+            for (int i = 0; i < searchHw.length() && hwHits.size() < 60; i++) {
+                JSONObject h = searchHw.optJSONObject(i);
+                if (h == null) continue;
+                if (homeworkBlob(h).contains(q)) hwHits.add(h);
+            }
+        }
+
+        List<JSONObject> mkHits = new ArrayList<>();
+        if (searchMarks != null) {
+            for (int i = 0; i < searchMarks.length() && mkHits.size() < 60; i++) {
+                JSONObject m = searchMarks.optJSONObject(i);
+                if (m == null) continue;
+                if (markBlob(m).contains(q)) mkHits.add(m);
+            }
+        }
+
+        if (hwHits.isEmpty() && mkHits.isEmpty()) {
+            searchStatus.setText("Ничего не найдено");
+            searchResults.addView(emptyCard("Ничего не найдено",
+                    "Попробуйте другое слово или часть названия предмета"));
+            return;
+        }
+
+        searchStatus.setText(hwHits.size() + " "
+                + plural(hwHits.size(), "задание", "задания", "заданий")
+                + " · " + mkHits.size() + " "
+                + plural(mkHits.size(), "оценка", "оценки", "оценок"));
+
+        if (!hwHits.isEmpty()) {
+            searchResults.addView(sectionHeader("ДОМАШНИЕ ЗАДАНИЯ", hwHits.size()));
+            for (JSONObject h : hwHits) searchResults.addView(homeworkCard(h));
+        }
+        if (!mkHits.isEmpty()) {
+            searchResults.addView(sectionHeader("ОЦЕНКИ", mkHits.size()));
+            for (JSONObject m : mkHits) searchResults.addView(marksRow(m));
+        }
+    }
+
+    private static String homeworkBlob(JSONObject h) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(' ').append(Api.s(h, "subject"));
+        sb.append(' ').append(Api.s(h, "text"));
+        sb.append(' ').append(Api.s(h, "date"));
+        JSONArray mats = h.optJSONArray("materials_list");
+        if (mats != null) {
+            for (int i = 0; i < mats.length(); i++) {
+                JSONObject m = mats.optJSONObject(i);
+                if (m != null) sb.append(' ').append(Api.s(m, "title"));
+            }
+        }
+        return sb.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private static String markBlob(JSONObject m) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(' ').append(Api.s(m, "subject_name"));
+        sb.append(' ').append(Api.s(m, "comment"));
+        sb.append(' ').append(Api.s(m, "control_form_name"));
+        sb.append(' ').append(Api.s(m, "value"));
+        sb.append(' ').append(Api.s(m, "date"));
+        return sb.toString().toLowerCase(Locale.ROOT);
     }
 
     // ------------------------------------------------------------- сеть и VPN
@@ -2807,7 +3178,7 @@ public final class MainActivity extends Activity {
             if (name.isEmpty()) name = "Ребёнок " + (i + 1);
             String cls = Api.s(kid, "class_name");
             TextView chip = tv(cls.isEmpty() ? name : name + "\n" + cls,
-                    12, sel ? WHITE : TEXT, sel);
+                    12, sel ? ON_ACCENT : TEXT, sel);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(dp(12), dp(8), dp(12), dp(8));
             chip.setBackground(sel ? roundBg(ACCENT, 3, 0)
@@ -2964,7 +3335,7 @@ public final class MainActivity extends Activity {
             body.addView(s);
         }
 
-        ImageView chevron = icon(R.drawable.ic_chevron, 0xFF3F4652, 18);
+        ImageView chevron = icon(R.drawable.ic_chevron, MUTED, 18);
         row.addView(chevron);
 
         row.setOnClickListener(new View.OnClickListener() {
@@ -3024,7 +3395,7 @@ public final class MainActivity extends Activity {
                             dayAuth = false;
                             dayError = null;
                             dayData = day;
-                            if (tab == 0 && date.equals(currentDate)) renderTab();
+                            if (tab == TAB_DAY && date.equals(currentDate)) renderTab();
                         }
                     });
                 } catch (final Api.AuthException e) {
@@ -3033,7 +3404,7 @@ public final class MainActivity extends Activity {
                             if (gen != dayGen) return;
                             dayLoading = false;
                             dayAuth = true;
-                            if (tab == 0 && date.equals(currentDate)) renderTab();
+                            if (tab == TAB_DAY && date.equals(currentDate)) renderTab();
                         }
                     });
                 } catch (final Exception e) {
@@ -3042,12 +3413,556 @@ public final class MainActivity extends Activity {
                             if (gen != dayGen) return;
                             dayLoading = false;
                             dayError = e;
-                            if (tab == 0 && date.equals(currentDate)) renderTab();
+                            if (tab == TAB_DAY && date.equals(currentDate)) renderTab();
                         }
                     });
                 }
             }
         });
+    }
+
+    // ------------------------------------------------------------- неделя
+
+    private View buildWeek() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.addView(weekNavRow());
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(2), dp(12), dp(28));
+
+        if (weekAuth && weekData == null) {
+            content.addView(authCard("Нужен вход в МЭШ",
+                    "Чтобы показать неделю, войдите в школу заново."));
+        } else if (weekData == null && weekError != null) {
+            content.addView(errorCard(weekError, new Runnable() {
+                @Override public void run() { fetchWeek(true); }
+            }));
+        } else if (weekData == null) {
+            content.addView(skeletonMarks());
+        } else {
+            if (weekAuth) content.addView(authBanner());
+            renderWeek(content, weekData);
+        }
+
+        scroll.addView(content);
+        page.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        return page;
+    }
+
+    private View weekNavRow() {
+        final String start = weekStart != null ? weekStart : mondayOf(today());
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(2), dp(10), dp(4));
+
+        ImageView prev = icon(R.drawable.ic_chevron, MUTED, 18);
+        prev.setRotation(180);
+        prev.setPadding(dp(9), dp(9), dp(9), dp(9));
+        prev.setBackground(rippleBg(0x00000000, 20));
+        prev.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                openWeek(shiftDate(start, -7));
+            }
+        });
+        row.addView(prev, new LinearLayout.LayoutParams(dp(38), dp(38)));
+
+        TextView title = tvSerif(weekRangeLabel(start), 17, TEXT, true);
+        title.setGravity(Gravity.CENTER);
+        row.addView(title, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        ImageView next = icon(R.drawable.ic_chevron, MUTED, 18);
+        next.setPadding(dp(9), dp(9), dp(9), dp(9));
+        next.setBackground(rippleBg(0x00000000, 20));
+        next.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                openWeek(shiftDate(start, 7));
+            }
+        });
+        row.addView(next, new LinearLayout.LayoutParams(dp(38), dp(38)));
+
+        if (!start.equals(mondayOf(today()))) {
+            TextView now = tv("эта неделя", 11, ACCENT, true);
+            now.setPadding(dp(6), dp(8), dp(4), dp(8));
+            now.setClickable(true);
+            now.setBackground(rippleBg(0x00000000, 20));
+            now.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    openWeek(mondayOf(today()));
+                }
+            });
+            row.addView(now);
+        }
+        return row;
+    }
+
+    private String weekRangeLabel(String start) {
+        String end = shiftDate(start, 6);
+        int m1 = monthIndex(start);
+        int m2 = monthIndex(end);
+        String left = dayOfMonth(start) + (m1 != m2 ? " " + MONTHS[m1] : "");
+        return left + " – " + dayOfMonth(end) + " " + MONTHS[m2];
+    }
+
+    private int monthIndex(String iso) {
+        try {
+            return Integer.parseInt(iso.substring(5, 7)) - 1;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private void openWeek(String start) {
+        weekStart = start;
+        weekData = null;
+        weekLoaded = null;
+        weekError = null;
+        weekAuth = false;
+        String raw = prefs.getString("week3:" + start, null);
+        if (raw != null) {
+            try {
+                weekData = new JSONArray(raw);
+                weekLoaded = start;
+            } catch (Exception ignored) {
+            }
+        }
+        if (weekData == null) {
+            fetchWeek(true);
+        } else {
+            renderTab();
+            fetchWeek(true);
+        }
+    }
+
+    private void fetchWeek(boolean force) {
+        final String start = weekStart != null ? weekStart : mondayOf(today());
+        weekStart = start;
+        if (!force && weekData != null && start.equals(weekLoaded)) return;
+
+        final int gen = ++weekGen;
+        weekLoading = true;
+        weekAuth = false;
+        weekError = null;
+        if (tab == TAB_WEEK) renderTab();
+        if (exec.isShutdown()) return;
+
+        exec.execute(new Runnable() {
+            @Override public void run() {
+                try {
+                    final JSONArray days = Api.fromCookies().week(start, 7);
+                    cachePut("week3:" + start, days.toString());
+                    ui.post(new Runnable() {
+                        @Override public void run() {
+                            if (gen != weekGen) return;
+                            weekLoading = false;
+                            weekAuth = false;
+                            weekError = null;
+                            weekData = days;
+                            weekLoaded = start;
+                            if (tab == TAB_WEEK) renderTab();
+                        }
+                    });
+                } catch (final Api.AuthException e) {
+                    ui.post(new Runnable() {
+                        @Override public void run() {
+                            if (gen != weekGen) return;
+                            weekLoading = false;
+                            weekAuth = true;
+                            if (tab == TAB_WEEK) renderTab();
+                        }
+                    });
+                } catch (final Exception e) {
+                    ui.post(new Runnable() {
+                        @Override public void run() {
+                            if (gen != weekGen) return;
+                            weekLoading = false;
+                            weekError = e;
+                            if (tab == TAB_WEEK) renderTab();
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    /** Один день недели с уже посчитанными ДЗ и нагрузкой. */
+    private static final class WeekDay {
+        JSONObject raw;
+        String date;
+        final List<JSONObject> hw = new ArrayList<>();
+        int lessons;
+        int controls;
+        int digital;
+        int left;
+    }
+
+    private void renderWeek(LinearLayout content, JSONArray days) {
+        String todayIso = today();
+        List<WeekDay> list = new ArrayList<>();
+
+        for (int i = 0; i < days.length(); i++) {
+            JSONObject d = days.optJSONObject(i);
+            if (d == null) continue;
+
+            WeekDay w = new WeekDay();
+            w.raw = d;
+            w.date = Api.s(d, "date");
+
+            JSONArray lessons = d.optJSONArray("lessons");
+            if (lessons == null) lessons = new JSONArray();
+            w.lessons = lessons.length();
+            for (int j = 0; j < lessons.length(); j++) {
+                if (isControlLesson(lessons.optJSONObject(j))) w.controls++;
+            }
+
+            JSONArray hws = d.optJSONArray("homeworks");
+            if (hws == null) hws = new JSONArray();
+            Set<String> seen = new HashSet<>();
+            for (int j = 0; j < hws.length(); j++) {
+                JSONObject h = hws.optJSONObject(j);
+                if (h == null) continue;
+                // один и тот же текст иногда приходит от нескольких уроков
+                if (!seen.add(Api.s(h, "subject") + "|" + Api.s(h, "text"))) continue;
+                w.hw.add(h);
+                if (!Api.b(h, "done")) w.left++;
+                if (hasDigitalTest(h)) w.digital++;
+            }
+            list.add(w);
+        }
+
+        int totalDone = 0;
+        for (WeekDay w : list) {
+            for (JSONObject h : w.hw) if (Api.b(h, "done")) totalDone++;
+        }
+        // is_done в API почти всегда false; счётчик показываем, только если
+        // школа действительно отмечает выполненные задания.
+        boolean trackDone = totalDone > 0;
+
+        if (!list.isEmpty()) content.addView(weekSummary(list, trackDone));
+        for (WeekDay w : list) renderWeekDay(content, w, todayIso, trackDone);
+    }
+
+    private void renderWeekDay(LinearLayout content, final WeekDay w,
+                               String todayIso, boolean trackDone) {
+        final String date = w.date;
+        boolean isToday = date.equals(todayIso);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(9), dp(12), dp(10));
+        card.setBackground(isToday ? roundBg(CURRENT, 3, ACCENT)
+                : roundBg(SURFACE, 3, STROKE));
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.bottomMargin = dp(8);
+        card.setLayoutParams(clp);
+        card.setClickable(true);
+        card.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                selectTab(TAB_DAY);
+                selectDate(date);
+            }
+        });
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+
+        String label = WEEKDAYS_SHORT[dow(date)] + " · "
+                + dayOfMonth(date) + " " + MONTHS[monthIndex(date)];
+        TextView dayName = tv(label, 13, isToday ? ACCENT : TEXT, true);
+        head.addView(dayName, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        StringBuilder meta = new StringBuilder();
+        if (w.lessons == 0) {
+            meta.append("нет уроков");
+        } else {
+            meta.append(w.lessons).append(" ")
+                    .append(plural(w.lessons, "урок", "урока", "уроков"));
+        }
+        if (!w.hw.isEmpty()) meta.append(" · ДЗ ").append(w.hw.size());
+        head.addView(tv(meta.toString(), 10, MUTED, false));
+        card.addView(head);
+
+        String err = Api.s(w.raw, "error");
+        if (!err.isEmpty()) {
+            TextView e = tv(err, 11, MUTED, false);
+            e.setPadding(0, dp(4), 0, 0);
+            card.addView(e);
+            content.addView(card);
+            return;
+        }
+
+        LinearLayout flags = new LinearLayout(this);
+        flags.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        flp.topMargin = dp(6);
+        flags.setLayoutParams(flp);
+        if (w.controls > 0) {
+            flags.addView(tag(w.controls > 1 ? "контрольных " + w.controls
+                    : "контрольная", RED, soft(RED)));
+        }
+        if (w.digital > 0) {
+            flags.addView(tag("ЦДЗ " + w.digital, ACCENT, soft(ACCENT)));
+        }
+        if (trackDone && w.left > 0) {
+            flags.addView(tag("не сделано " + w.left, AMBER, soft(AMBER)));
+        }
+        if (flags.getChildCount() > 0) card.addView(flags);
+
+        JSONArray lessons = w.raw.optJSONArray("lessons");
+        if (lessons == null) lessons = new JSONArray();
+        for (int j = 0; j < lessons.length(); j++) {
+            JSONObject l = lessons.optJSONObject(j);
+            if (l == null) continue;
+            card.addView(weekLessonRow(l));
+        }
+
+        for (int j = 0; j < w.hw.size() && j < 3; j++) {
+            card.addView(weekHwRow(w.hw.get(j), trackDone));
+        }
+        if (w.hw.size() > 3) {
+            TextView more = tv("ещё " + (w.hw.size() - 3) + " — откройте день",
+                    10, ACCENT, false);
+            more.setPadding(0, dp(5), 0, 0);
+            card.addView(more);
+        }
+
+        content.addView(card);
+    }
+
+    private View weekSummary(List<WeekDay> days, boolean trackDone) {
+        int totalHw = 0, totalLeft = 0, totalControls = 0, totalDigital = 0;
+        int totalLessons = 0, maxLessons = 0;
+        for (WeekDay w : days) {
+            totalHw += w.hw.size();
+            totalLeft += w.left;
+            totalControls += w.controls;
+            totalDigital += w.digital;
+            totalLessons += w.lessons;
+            maxLessons = Math.max(maxLessons, w.lessons);
+        }
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(14), dp(12), dp(14), dp(10));
+        box.setBackground(roundBg(SURFACE, 3, STROKE));
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.bottomMargin = dp(10);
+        box.setLayoutParams(blp);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        top.addView(tvSerif(String.valueOf(totalHw), 30, TEXT, true));
+
+        LinearLayout cap = new LinearLayout(this);
+        cap.setOrientation(LinearLayout.VERTICAL);
+        cap.setPadding(dp(10), 0, 0, 0);
+        cap.addView(tv(plural(totalHw, "задание", "задания", "заданий")
+                + " на неделю", 11, MUTED, false));
+        if (totalHw == 0) {
+            cap.addView(tv("пока пусто", 11, MUTED, false));
+        } else if (trackDone && totalLeft == 0) {
+            cap.addView(tv("всё сделано", 11, GREEN, true));
+        } else if (trackDone) {
+            cap.addView(tv(totalLeft + " не сделано", 11, AMBER, true));
+        }
+        top.addView(cap, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        box.addView(top);
+
+        LinearLayout tags = new LinearLayout(this);
+        tags.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        tlp.topMargin = dp(8);
+        tags.setLayoutParams(tlp);
+        if (totalControls > 0) {
+            tags.addView(tag(totalControls > 1 ? "контрольных " + totalControls
+                    : "контрольная", RED, soft(RED)));
+        }
+        if (totalDigital > 0) {
+            tags.addView(tag("ЦДЗ " + totalDigital, ACCENT, soft(ACCENT)));
+        }
+        if (totalLessons > 0) {
+            tags.addView(tag(totalLessons + " "
+                    + plural(totalLessons, "урок", "урока", "уроков"), MUTED, soft(MUTED)));
+        }
+        if (tags.getChildCount() > 0) box.addView(tags);
+
+        box.addView(weekLoadStrip(days, maxLessons));
+        if (totalControls > 0) {
+            TextView legend = tv("точка — контрольная или проверочная", 9, MUTED, false);
+            legend.setPadding(dp(2), dp(4), 0, 0);
+            box.addView(legend);
+        }
+        return box;
+    }
+
+    /** Столбики уроков по дням: видно, где неделя тяжёлая. */
+    private View weekLoadStrip(List<WeekDay> days, int maxLessons) {
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        slp.topMargin = dp(12);
+        strip.setLayoutParams(slp);
+
+        String todayIso = today();
+        for (WeekDay w : days) {
+            boolean isToday = w.date.equals(todayIso);
+
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setGravity(Gravity.CENTER_HORIZONTAL);
+
+            FrameLayout box = new FrameLayout(this);
+            int h = maxLessons == 0 ? dp(3) : dp(3 + 23 * w.lessons / maxLessons);
+            View bar = new View(this);
+            bar.setBackground(roundBg(isToday ? ACCENT : RULE, 2, 0));
+            FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(dp(12), h);
+            blp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+            box.addView(bar, blp);
+
+            if (w.controls > 0) {
+                View dot = new View(this);
+                dot.setBackground(roundBg(RED, 2, 0));
+                FrameLayout.LayoutParams dlp = new FrameLayout.LayoutParams(dp(4), dp(4));
+                dlp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+                box.addView(dot, dlp);
+            }
+            col.addView(box, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(30)));
+
+            String label = WEEKDAYS_SHORT[dow(w.date)];
+            TextView day = tv(label, 9, isToday ? ACCENT : MUTED, isToday);
+            day.setGravity(Gravity.CENTER);
+            day.setPadding(0, dp(3), 0, 0);
+            col.addView(day);
+
+            strip.addView(col, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        return strip;
+    }
+
+    /** Строка ДЗ: точка «сделано», текст и переход к подробностям. */
+    private View weekHwRow(final JSONObject h, boolean trackDone) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(5), 0, 0);
+        row.setClickable(true);
+        row.setBackground(rippleBg(0x00000000, 2));
+
+        boolean done = Api.b(h, "done");
+        if (trackDone) {
+            View dot = new View(this);
+            dot.setBackground(done ? roundBg(GREEN, 4, 0)
+                    : roundBg(0x00000000, 4, MUTED));
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(8), dp(8));
+            dlp.topMargin = dp(4);
+            dlp.rightMargin = dp(7);
+            row.addView(dot, dlp);
+        }
+
+        String subject = Api.s(h, "subject");
+        String text = Api.s(h, "text").replace("\n", " ").trim();
+        String line = "ДЗ";
+        if (!subject.isEmpty()) line += " · " + subject;
+        if (!text.isEmpty()) line += " — " + text;
+
+        TextView t = tv(line, 11, done ? MUTED : TEXT, false);
+        t.setMaxLines(2);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        row.addView(t, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showHomeworkDetails(h); }
+        });
+        return row;
+    }
+
+    /** Контрольная, проверочная, диктант или тест — по теме урока. */
+    private static boolean isControlLesson(JSONObject l) {
+        if (l == null) return false;
+        String t = Api.s(l, "topic").toLowerCase(Locale.ROOT);
+        return t.contains("контрольн") || t.contains("самостоятельн")
+                || t.contains("проверочн") || t.contains("диктант")
+                || t.contains("зачёт") || t.contains("зачет")
+                || t.contains("тест");
+    }
+
+    /** В ДЗ есть цифровое задание (ЦДЗ). */
+    private static boolean hasDigitalTest(JSONObject h) {
+        JSONArray mats = h.optJSONArray("materials_list");
+        if (mats == null) return false;
+        for (int i = 0; i < mats.length(); i++) {
+            JSONObject m = mats.optJSONObject(i);
+            if (m != null && "test_spec_binding".equals(Api.s(m, "type"))) return true;
+        }
+        return false;
+    }
+
+    private View weekLessonRow(JSONObject l) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(6), 0, 0);
+
+        TextView time = tv(Api.s(l, "begin"), 11, MUTED, false);
+        time.setTypeface(Typeface.MONOSPACE);
+        row.addView(time, new LinearLayout.LayoutParams(dp(42),
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+
+        TextView subject = tv(subjectOf(l), 13, TEXT, false);
+        subject.setMaxLines(1);
+        subject.setEllipsize(TextUtils.TruncateAt.END);
+        body.addView(subject);
+
+        String room = Api.s(l, "room");
+        if (!room.isEmpty()) {
+            TextView r = tv("каб. " + room, 10, MUTED, false);
+            body.addView(r);
+        }
+        if (isControlLesson(l)) {
+            TextView c = tv("контрольная", 9, RED, true);
+            c.setPadding(0, dp(1), 0, 0);
+            body.addView(c);
+        }
+        row.addView(body, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        JSONArray marks = l.optJSONArray("marks");
+        if (marks != null) {
+            for (int i = 0; i < marks.length(); i++) {
+                String v = Api.str(marks.opt(i));
+                if (!v.isEmpty()) row.addView(markChip(v));
+            }
+        }
+        return row;
     }
 
     // ------------------------------------------------------------- загрузка оценок
@@ -3079,7 +3994,7 @@ public final class MainActivity extends Activity {
             }
         }
 
-        if (tab == 2) renderTab();
+        if (tab == TAB_MARKS) renderTab();
 
         exec.execute(new Runnable() {
             @Override public void run() {
@@ -3094,7 +4009,7 @@ public final class MainActivity extends Activity {
                             marksData = items;
                             marksFrom = from;
                             marksTo = to;
-                            if (tab == 2) renderTab();
+                            if (tab == TAB_MARKS) renderTab();
                         }
                     });
                 } catch (final Api.AuthException e) {
@@ -3103,7 +4018,7 @@ public final class MainActivity extends Activity {
                             if (gen != marksGen) return;
                             marksLoading = false;
                             marksAuth = true;
-                            if (tab == 2) renderTab();
+                            if (tab == TAB_MARKS) renderTab();
                         }
                     });
                 } catch (final Exception e) {
@@ -3112,7 +4027,7 @@ public final class MainActivity extends Activity {
                             if (gen != marksGen) return;
                             marksLoading = false;
                             marksError = e;
-                            if (tab == 2) renderTab();
+                            if (tab == TAB_MARKS) renderTab();
                         }
                     });
                 }
@@ -3137,7 +4052,7 @@ public final class MainActivity extends Activity {
                 try {
                     ratingData = new JSONArray(raw);
                     ratingLoading = false;
-                    if (tab == 2 && marksView == 1) renderTab();
+                    if (tab == TAB_MARKS && marksView == 1) renderTab();
                 } catch (Exception ignored) {
                 }
             }
@@ -3149,7 +4064,7 @@ public final class MainActivity extends Activity {
                 }
             }
         }
-        if (tab == 2 && marksView == 1) renderTab();
+        if (tab == TAB_MARKS && marksView == 1) renderTab();
 
         if (exec.isShutdown()) return;
         overallTried = true;
@@ -3173,7 +4088,7 @@ public final class MainActivity extends Activity {
                             ratingLoading = false;
                             ratingData = items;
                             if (fOverall != null) overallRank = fOverall;
-                            if (tab == 2 && marksView == 1) renderTab();
+                            if (tab == TAB_MARKS && marksView == 1) renderTab();
                         }
                     });
                 } catch (final Api.AuthException e) {
@@ -3182,7 +4097,7 @@ public final class MainActivity extends Activity {
                             if (gen != ratingGen) return;
                             ratingLoading = false;
                             ratingAuth = true;
-                            if (tab == 2 && marksView == 1) renderTab();
+                            if (tab == TAB_MARKS && marksView == 1) renderTab();
                         }
                     });
                 } catch (final Exception e) {
@@ -3191,7 +4106,7 @@ public final class MainActivity extends Activity {
                             if (gen != ratingGen) return;
                             ratingLoading = false;
                             ratingError = e;
-                            if (tab == 2 && marksView == 1) renderTab();
+                            if (tab == TAB_MARKS && marksView == 1) renderTab();
                         }
                     });
                 }
@@ -3324,7 +4239,7 @@ public final class MainActivity extends Activity {
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView badge = tv(String.valueOf(place), 13, place == 1 ? WHITE : TEXT, true);
+        TextView badge = tv(String.valueOf(place), 13, place == 1 ? ON_ACCENT : TEXT, true);
         badge.setGravity(Gravity.CENTER);
         badge.setBackground(roundBg(place == 1 ? GREEN : SURFACE2, 3,
                 place == 1 ? 0 : STROKE));
@@ -3398,7 +4313,7 @@ public final class MainActivity extends Activity {
                 try {
                     applyProfile(new JSONObject(raw));
                     profileLoading = false;
-                    if (tab == 3) renderTab();
+                    if (tab == TAB_MORE) renderTab();
                     else updateChrome();
                     return;
                 } catch (Exception ignored) {
@@ -3417,7 +4332,7 @@ public final class MainActivity extends Activity {
                             profileLoading = false;
                             profileError = null;
                             applyProfile(p);
-                            if (tab == 3) renderTab();
+                            if (tab == TAB_MORE) renderTab();
                             else updateChrome();
                         }
                     });
@@ -3426,7 +4341,7 @@ public final class MainActivity extends Activity {
                         @Override public void run() {
                             profileLoading = false;
                             profileError = e;
-                            if (tab == 3) renderTab();
+                            if (tab == TAB_MORE) renderTab();
                         }
                     });
                 }
@@ -3540,7 +4455,7 @@ public final class MainActivity extends Activity {
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(14), dp(10), dp(14), dp(10));
-        card.setBackground(roundBg(0xFFF7E7E2, 3, 0xFFD9B3A8));
+        card.setBackground(roundBg(ERR_BG, 3, ERR_STROKE));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(8);
@@ -4329,11 +5244,11 @@ public final class MainActivity extends Activity {
         row.setClickable(true);
 
         if (iconRes != 0) {
-            ImageView ic = icon(iconRes, WHITE, 16);
+            ImageView ic = icon(iconRes, ON_ACCENT, 16);
             row.addView(ic, new LinearLayout.LayoutParams(dp(16), dp(16)));
         }
 
-        TextView t = tvSans(label, 14, WHITE, true);
+        TextView t = tvSans(label, 14, ON_ACCENT, true);
         t.setGravity(Gravity.CENTER);
         if (iconRes != 0) t.setPadding(dp(8), 0, 0, 0);
         row.addView(t);
@@ -4499,6 +5414,12 @@ public final class MainActivity extends Activity {
                 takePhoto();
             } else {
                 toast("Без разрешения камера не сможет сохранить фото");
+            }
+        } else if (req == REQ_NOTIF) {
+            if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) {
+                enableNotifications();
+            } else {
+                toast("Без разрешения уведомления не придут");
             }
         }
     }
@@ -5079,14 +6000,14 @@ public final class MainActivity extends Activity {
         tags.setOrientation(LinearLayout.HORIZONTAL);
         tags.setPadding(0, dp(10), 0, dp(2));
         if (Api.b(h, "done")) {
-            tags.addView(tag("выполнено", GREEN, 0x1A2F6B4F));
+            tags.addView(tag("выполнено", GREEN, soft(GREEN)));
         } else {
             tags.addView(tag("не выполнено", AMBER, 0x1F9A6A22));
         }
         final JSONObject cdz = firstDigital(h);
         if (cdz != null) tags.addView(tag("ЦДЗ", ACCENT, ACCENT_SOFT));
         if (Api.b(h, "has_teacher_answer")) {
-            tags.addView(tag("ответ учителя", GREEN, 0x1A2F6B4F));
+            tags.addView(tag("ответ учителя", GREEN, soft(GREEN)));
         }
         JSONArray fa = h.optJSONArray("files");
         int files = uniqueFileCount(h, fa);
@@ -5199,7 +6120,7 @@ public final class MainActivity extends Activity {
             LinearLayout ans = new LinearLayout(this);
             ans.setOrientation(LinearLayout.VERTICAL);
             ans.setPadding(dp(14), dp(12), dp(14), dp(12));
-            ans.setBackground(roundBg(0x1A2F6B4F, 3, 0));
+            ans.setBackground(roundBg(soft(GREEN), 3, 0));
             ans.addView(tv("Учитель ответил на работу", 14, GREEN, true));
             TextView note = tv("Текст ответа и отметка о проверке — в МЭШ, "
                     + "на карточке задания.", 12, MUTED, false);
@@ -5254,7 +6175,7 @@ public final class MainActivity extends Activity {
         File dir = getExternalFilesDir(null);
         new AlertDialog.Builder(this)
                 .setTitle("OpenSchool")
-                .setMessage("OpenSchool. Дневник МЭШ. Версия 1.5\n\n"
+                .setMessage("OpenSchool. Дневник МЭШ. Версия 1.6\n\n"
                         + "Данные берутся с school.mos.ru по вашей сессии. "
                         + "Cookies хранятся только внутри приложения.\n\n"
                         + "Вход: «Ещё → Войти в МЭШ» или кнопка на экране входа.\n"
@@ -5888,6 +6809,11 @@ public final class MainActivity extends Activity {
         return row;
     }
 
+    /** Полупрозрачная подложка того же тона, что и текст метки. */
+    private static int soft(int color) {
+        return (color & 0x00FFFFFF) | 0x22000000;
+    }
+
     private TextView tag(String text, int color, int bg) {
         TextView t = tv(text, 10, color, true);
         t.setPadding(dp(7), dp(3), dp(7), dp(3));
@@ -5934,7 +6860,7 @@ public final class MainActivity extends Activity {
     }
 
     private TextView primaryButton(String label, final Runnable action) {
-        TextView t = tv(label, 14, WHITE, true);
+        TextView t = tv(label, 14, ON_ACCENT, true);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(16), dp(12), dp(16), dp(12));
         t.setBackground(roundBg(ACCENT, 3, 0));

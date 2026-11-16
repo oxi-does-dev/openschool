@@ -223,11 +223,13 @@ pub fn install_fonts(ctx: &egui::Context) {
 }
 
 pub fn apply_style(ctx: &egui::Context, p: Palette) {
-    let mut style = egui::Style::default();
-    style.visuals = if p.dark {
-        egui::Visuals::dark()
-    } else {
-        egui::Visuals::light()
+    let mut style = egui::Style {
+        visuals: if p.dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        },
+        ..Default::default()
     };
     let v = &mut style.visuals;
     v.panel_fill = p.bg;

@@ -310,7 +310,7 @@ fn day_strip(app: &mut App, ui: &mut Ui, p: &Palette, ctx: &egui::Context, date:
     let painter = ui.painter().clone();
     let w = rect.width() / 7.0;
 
-    for i in 0..7 {
+    for (i, weekday) in WEEKDAYS_SHORT.iter().enumerate() {
         let d = api::shift(start, i as i64);
         let cell = egui::Rect::from_min_size(
             rect.left_top() + Vec2::new(w * i as f32, 0.0),
@@ -333,7 +333,7 @@ fn day_strip(app: &mut App, ui: &mut Ui, p: &Palette, ctx: &egui::Context, date:
         painter.text(
             cell.center_top() + Vec2::new(0.0, 7.0),
             Align2::CENTER_TOP,
-            WEEKDAYS_SHORT[i],
+            *weekday,
             FontId::proportional(10.0),
             if selected || is_today { p.accent } else { p.muted },
         );
@@ -388,7 +388,9 @@ fn render_day(app: &mut App, ui: &mut Ui, p: &Palette, day: &Day) {
         empty(ui, p, "На этот день уроков нет.");
     }
     for l in &day.lessons {
-        lesson_card(ui, p, l);
+        if lesson_card(ui, p, l) {
+            app.open_detail(Detail::Lesson(l.clone()));
+        }
         card_gap(ui);
     }
 
@@ -444,8 +446,9 @@ fn render_day(app: &mut App, ui: &mut Ui, p: &Palette, day: &Day) {
     ui.add_space(10.0);
 }
 
-fn lesson_card(ui: &mut Ui, p: &Palette, l: &Lesson) {
-    card(ui, p, |ui| {
+fn lesson_card(ui: &mut Ui, p: &Palette, l: &Lesson) -> bool {
+    let id = ui.scope_id().with(("lesson", l.id.clone(), l.begin.clone()));
+    let inner = card(ui, p, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(54.0);
@@ -501,6 +504,16 @@ fn lesson_card(ui: &mut Ui, p: &Palette, l: &Lesson) {
             });
         });
     });
+    let resp = ui.interact(inner.response.rect, id, Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_stroke(
+            inner.response.rect,
+            CornerRadius::same(3),
+            Stroke::new(1.0, p.accent),
+            StrokeKind::Inside,
+        );
+    }
+    resp.clicked()
 }
 
 fn mark_chip(ui: &mut Ui, p: &Palette, value: &str, size: f32) {
@@ -955,8 +968,8 @@ fn week_day_card(app: &mut App, ui: &mut Ui, p: &Palette, ctx: &egui::Context, d
                 more += 1;
             }
         }
-        if more > 0 {
-            if ui
+        if more > 0
+            && ui
                 .add(
                     egui::Label::new(
                         RichText::new(format!("ещё {} — откройте день", more))
@@ -966,10 +979,9 @@ fn week_day_card(app: &mut App, ui: &mut Ui, p: &Palette, ctx: &egui::Context, d
                     .sense(Sense::click()),
                 )
                 .clicked()
-            {
-                if let Some(x) = date {
-                    app.open_day(ctx, x);
-                }
+        {
+            if let Some(x) = date {
+                app.open_day(ctx, x);
             }
         }
     });
@@ -1797,6 +1809,235 @@ pub fn more(app: &mut App, ui: &mut Ui, p: &Palette, ctx: &egui::Context) {
 }
 
 // --------------------------------------------------------------- подробности
+
+pub fn lesson_details(app: &App, ui: &mut Ui, p: &Palette, l: &Lesson) {
+    ui.label(
+        RichText::new(if l.subject.is_empty() {
+            "Урок"
+        } else {
+            &l.subject
+        })
+        .font(theme::serif_bold(23.0))
+        .color(p.text),
+    );
+
+    let mut when = String::new();
+    if !l.begin.is_empty() {
+        when.push_str(&l.begin);
+        if !l.end.is_empty() {
+            when.push_str(&format!("–{}", l.end));
+        }
+    }
+    if !l.room.is_empty() {
+        if !when.is_empty() {
+            when.push_str("  ·  ");
+        }
+        when.push_str(&format!("каб. {}", l.room));
+    }
+    if !when.is_empty() {
+        ui.label(RichText::new(when).size(11.5).color(p.muted));
+    }
+    if !l.teacher.is_empty() {
+        ui.label(RichText::new(&l.teacher).size(11.0).color(p.muted));
+    }
+
+    if l.is_control() {
+        ui.add_space(6.0);
+        chip(ui, "контрольная", p.accent, p.accent_soft);
+    }
+    if !l.marks.is_empty() {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            for m in &l.marks {
+                mark_chip(ui, p, m, 26.0);
+            }
+        });
+    }
+
+    if !l.topic.is_empty() {
+        ui.add_space(8.0);
+        rule(ui, p);
+        ui.add_space(8.0);
+        caps(ui, p, "Тема");
+        ui.add(
+            Label::new(RichText::new(&l.topic).size(12.5).color(p.text))
+                .wrap()
+                .selectable(true),
+        );
+    }
+
+    if !l.homework.is_empty() {
+        ui.add_space(8.0);
+        caps(ui, p, "Домашнее задание");
+        ui.add(
+            Label::new(RichText::new(&l.homework).size(12.5).color(p.text))
+                .wrap()
+                .selectable(true),
+        );
+    }
+
+    match &app.lesson_slot().state {
+        Load::Loading | Load::Idle => {
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(RichText::new("уточняю у МЭШ…").size(10.5).color(p.muted));
+            });
+        }
+        Load::Failed(_) => {
+            ui.add_space(10.0);
+            ui.label(
+                RichText::new(
+                    "МЭШ не отдал подробности этого урока — видно только расписание.",
+                )
+                .size(10.5)
+                .color(p.muted),
+            );
+        }
+        Load::Ready(d) => {
+            if l.marks.is_empty() && !d.marks.is_empty() {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    for m in &d.marks {
+                        mark_chip(ui, p, &m.value, 26.0);
+                    }
+                });
+            }
+
+            let mut started = !l.topic.is_empty() || !l.homework.is_empty();
+            let mut section = |ui: &mut Ui, heading: &str| {
+                if started {
+                    ui.add_space(8.0);
+                    rule(ui, p);
+                    ui.add_space(8.0);
+                }
+                caps(ui, p, heading);
+                started = true;
+            };
+
+            if !d.topic.is_empty() && d.topic != l.topic {
+                section(ui, if l.topic.is_empty() { "Тема" } else { "Тема по плану" });
+                ui.add(
+                    Label::new(RichText::new(&d.topic).size(12.5).color(p.text))
+                        .wrap()
+                        .selectable(true),
+                );
+            }
+
+            if d.missed {
+                section(ui, "Посещение");
+                chip(ui, "урок пропущен", p.red, p.surface2);
+            } else {
+                let texts: Vec<&String> = d
+                    .homeworks
+                    .iter()
+                    .filter(|t| t.as_str() != l.homework)
+                    .collect();
+                if !texts.is_empty() {
+                    section(ui, "Домашнее задание");
+                    for text in texts {
+                        ui.add(
+                            Label::new(RichText::new(text).size(12.5).color(p.text))
+                                .wrap()
+                                .selectable(true),
+                        );
+                    }
+                }
+            }
+
+            if !d.materials.is_empty() {
+                section(ui, "Материалы");
+                let mut digital_note = false;
+                for m in &d.materials {
+                    ui.add_space(3.0);
+                    if !m.kind.is_empty() {
+                        ui.label(RichText::new(&m.kind).size(9.5).color(p.muted));
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(&m.title).size(12.0).color(p.text));
+                        if m.action == "Пройти" {
+                            chip(ui, "ЦДЗ", p.accent, p.accent_soft);
+                        } else if !m.action.is_empty() {
+                            chip(ui, &m.action, p.accent, p.accent_soft);
+                        }
+                        if m.count > 1 {
+                            let word = match m.count % 100 {
+                                11..=14 => "заданий",
+                                _ => match m.count % 10 {
+                                    1 => "задание",
+                                    2..=4 => "задания",
+                                    _ => "заданий",
+                                },
+                            };
+                            ui.label(
+                                RichText::new(format!("{} {}", m.count, word))
+                                    .size(9.5)
+                                    .color(p.muted),
+                            );
+                        }
+                    });
+                    if !m.uuid.is_empty() && m.url.is_empty() {
+                        digital_note = true;
+                    }
+                    if !m.url.is_empty() {
+                        if api::allowed_url(&m.url) {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Открыть материал").size(11.0),
+                                    )
+                                    .fill(p.surface2)
+                                    .stroke(Stroke::new(1.0, p.stroke)),
+                                )
+                                .clicked()
+                            {
+                                let _ = webbrowser::open(&m.url);
+                            }
+                        } else {
+                            ui.label(
+                                RichText::new(format!(
+                                    "ссылка вне МЭШ ({}) — не открываю",
+                                    api::url_host(&m.url)
+                                ))
+                                .size(10.0)
+                                .color(p.muted),
+                            );
+                        }
+                    }
+                }
+                if digital_note {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new("цифровые задания открываются в разделе «Домашние задания»")
+                            .size(9.5)
+                            .color(p.muted),
+                    );
+                }
+            }
+
+            if !d.teacher_comments.is_empty() {
+                section(ui, "Комментарии учителя");
+                for text in &d.teacher_comments {
+                    ui.add(
+                        Label::new(RichText::new(text).size(12.0).color(p.text))
+                            .wrap()
+                            .selectable(true),
+                    );
+                }
+            }
+
+            if !d.comment.is_empty() {
+                section(ui, "Комментарий");
+                ui.add(
+                    Label::new(RichText::new(&d.comment).size(11.5).color(p.muted))
+                        .wrap()
+                        .selectable(true),
+                );
+            }
+        }
+    }
+
+}
 
 pub fn hw_details(
     app: &mut App,
