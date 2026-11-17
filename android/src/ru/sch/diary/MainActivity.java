@@ -5879,7 +5879,7 @@ public final class MainActivity extends Activity {
         s.setUserAgentString(Api.UA);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
 
-        web.setBackgroundColor(cdzDark ? 0xFF12110F : BG);
+        web.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
         themeBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 cdzDark = !cdzDark;
@@ -5888,7 +5888,7 @@ public final class MainActivity extends Activity {
                 themeBtn.setColorFilter(cdzDark ? ACCENT : MUTED);
                 themeBtn.setContentDescription(
                         cdzDark ? "Светлая тема" : "Тёмная тема");
-                web.setBackgroundColor(cdzDark ? 0xFF12110F : BG);
+                web.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
                 web.evaluateJavascript("window.__schPaper&&window.__schPaper.set("
                         + cdzDark + ")", null);
             }
