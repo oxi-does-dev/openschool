@@ -1,5 +1,40 @@
 (function () {
+  var VERSION = 2;
   var STYLE_ID = 'sch-paper-theme';
+  var DARK_ID = 'sch-paper-dark';
+
+  // Повторная инъекция на той же странице: просто переключаем тему.
+  if (window.__schPaper && window.__schPaper.version === VERSION) {
+    window.__schPaper.set(!!window.__schDark);
+    return;
+  }
+
+  // Тёмная тема — инверсия готовой «бумаги»: так перекрашивается любой
+  // чужой интерфейс ЦДЗ, включая то, что React рисует уже после нас.
+  // Картинки и видео отменяют инверсию, чтобы сканы оставались нормальными.
+  var DARK_CSS = [
+    'html{filter:invert(1) hue-rotate(180deg) !important;',
+    '  background:#F5EFE2 !important;}',
+    'html img,html video,html canvas,html picture{',
+    '  filter:invert(1) hue-rotate(180deg) !important;}',
+    'html ::selection{background:#3E4A5C !important;color:#E9EDF3 !important;}'
+  ].join('\n');
+
+  function applyDark(dark) {
+    var doc = document;
+    var st = doc.getElementById(DARK_ID);
+    if (dark) {
+      if (!st) {
+        st = doc.createElement('style');
+        st.id = DARK_ID;
+        (doc.head || doc.documentElement).appendChild(st);
+      }
+      if (st.textContent !== DARK_CSS) st.textContent = DARK_CSS;
+    } else if (st && st.parentNode) {
+      st.parentNode.removeChild(st);
+    }
+    window.__schDarkOn = !!dark;
+  }
 
   var CSS = [
     ':root{',
@@ -216,6 +251,7 @@
   }
 
   function boot() {
+    applyDark(!!window.__schDark);
     run(document);
     try {
       var mo = new MutationObserver(function (muts) {
@@ -244,8 +280,19 @@
           'aria-pressed', 'aria-current', 'data-selected']
       });
     } catch (e) { }
-    setInterval(function () { addStyle(document); }, 2000);
+    setInterval(function () {
+      addStyle(document);
+      if (window.__schDarkOn && !document.getElementById(DARK_ID)) {
+        applyDark(true);
+      }
+    }, 2000);
   }
+
+  window.__schPaper = {
+    version: VERSION,
+    set: applyDark,
+    isDark: function () { return !!window.__schDarkOn; }
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);

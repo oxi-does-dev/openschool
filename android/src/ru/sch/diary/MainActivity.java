@@ -270,6 +270,9 @@ public final class MainActivity extends Activity {
     private String studentId = "";
     private String selectedChildId = "";
     private String selectedChildPerson = "";
+    private boolean parentAccount;
+    private String parentName = "";
+    private boolean cdzDark;
 
     private LessonDialog lessonDialog;
     private ValueCallback<Uri[]> webFileCallback;
@@ -287,6 +290,8 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         prefs = getSharedPreferences("sch", MODE_PRIVATE);
         boolean dark = resolveDark();
+        String cdzMode = prefs.getString("cdz_theme", "auto");
+        cdzDark = "dark".equals(cdzMode) || ("auto".equals(cdzMode) && dark);
         applyPalette(dark);
         setTheme(dark ? R.style.AppThemeDark : R.style.AppTheme);
         super.onCreate(state);
@@ -2754,7 +2759,9 @@ public final class MainActivity extends Activity {
         content.setPadding(dp(12), dp(6), dp(12), dp(28));
 
         content.addView(profileCard());
-        if (childrenCount() > 1) content.addView(childrenCard());
+        if (childrenCount() > 0 && (parentAccount || childrenCount() > 1)) {
+            content.addView(childrenCard());
+        }
         content.addView(sessionCard());
 
         content.addView(sectionHeader("ДЕЙСТВИЯ", 0));
@@ -3239,6 +3246,12 @@ public final class MainActivity extends Activity {
                 TextView l = tv(line.toString(), 12, MUTED, false);
                 l.setPadding(0, dp(3), 0, 0);
                 body.addView(l);
+            }
+
+            if (parentAccount && !parentName.isEmpty()) {
+                TextView pr = tv("родитель: " + parentName, 11, MUTED, false);
+                pr.setPadding(0, dp(3), 0, 0);
+                body.addView(pr);
             }
 
             String birth = "";
@@ -4356,18 +4369,35 @@ public final class MainActivity extends Activity {
         JSONObject kid = selectedChild(kids);
 
         if (prof != null) {
-            studentName = joinNonEmpty(" ",
+            parentName = joinNonEmpty(" ",
                     Api.s(prof, "last_name"), Api.s(prof, "first_name"),
                     Api.s(prof, "middle_name"));
         }
+
+        // Родитель: в profile — взрослый, ребёнок отдельно в children.
+        // Надёжнее всего роль из cookie, иначе — несколько детей в профиле.
+        String profId = prof == null ? "" : Api.s(prof, "id");
+        String kidId = kid == null ? "" : Api.s(kid, "id");
+        if (Api.isParentRole()) parentAccount = true;
+        else if (Api.isStudentRole()) parentAccount = false;
+        else parentAccount = kids != null && kids.length() > 1;
+        Api.setParentAccount(parentAccount);
+
+        studentName = parentName;
         studentId = "";
         if (kid != null) {
             studentClass = Api.s(kid, "class_name");
-            studentId = Api.s(kid, "id");
+            studentId = kidId;
             JSONObject school = kid.optJSONObject("school");
             studentSchool = school == null ? "" : Api.s(school, "short_name");
+            if (parentAccount) {
+                String kidName = joinNonEmpty(" ",
+                        Api.s(kid, "last_name"), Api.s(kid, "first_name"),
+                        Api.s(kid, "middle_name"));
+                if (!kidName.isEmpty()) studentName = kidName;
+            }
         }
-        if (studentId.isEmpty() && prof != null) studentId = Api.s(prof, "id");
+        if (studentId.isEmpty()) studentId = profId;
     }
 
     private JSONObject selectedChild(JSONArray kids) {
@@ -4874,9 +4904,10 @@ public final class MainActivity extends Activity {
             n.setEllipsize(TextUtils.TruncateAt.MIDDLE);
             body.addView(n);
 
-            long size = f.optLong("size", 0);
-            String by = Api.s(f, "uploaded_by");
-            String desc = "TEACHER".equals(by) ? "от учителя" : "мой файл";
+            long size = Api.numLong(f, "size");
+            String by = Api.s(f, "uploaded_by").trim();
+            boolean fromTeacher = by.equalsIgnoreCase("teacher");
+            String desc = fromTeacher ? "от учителя" : "мой файл";
             if (size > 0) desc += "  ·  " + fileSize(size);
             TextView s = tv(desc, 10, MUTED, false);
             body.addView(s);
@@ -4890,7 +4921,7 @@ public final class MainActivity extends Activity {
                 }
             });
 
-            if (window && !"TEACHER".equals(by)) {
+            if (window && !fromTeacher) {
                 ImageView del = icon(R.drawable.ic_close, MUTED, 16);
                 del.setPadding(dp(8), dp(8), dp(8), dp(8));
                 del.setBackground(rippleBg(0x00000000, 20));
@@ -5048,8 +5079,7 @@ public final class MainActivity extends Activity {
 
             final List<PickedPhoto> files = new ArrayList<>(pending);
             final Integer var = variant;
-            final String workIdNow = studentWork == null
-                    ? "" : Api.s(studentWork, "student_work_id");
+            final String workIdNow = Api.workId(studentWork);
             final Integer oldVariant = workVariant(studentWork);
 
             if (exec.isShutdown()) {
@@ -5063,12 +5093,25 @@ public final class MainActivity extends Activity {
                         Api api = Api.fromCookies();
                         String workId = workIdNow;
                         if (workId.isEmpty()) {
-                            JSONObject created = api.createStudentWork(lessonId, var);
-                            workId = Api.s(created, "id");
-                            if (workId.isEmpty()) {
-                                throw new Api.ApiException("МЭШ не вернул id работы");
+                            try {
+                                JSONObject created = api.createStudentWork(lessonId, var);
+                                workId = Api.workId(created);
+                            } catch (Api.ApiException e) {
+                                // 409 — работа уже создана (например, с другого
+                                // устройства или при повторной отправке).
+                                if (e.status == 409) {
+                                    workId = api.existingWorkId(lessonId);
+                                } else {
+                                    throw e;
+                                }
                             }
-                        } else if (var != null
+                            if (workId.isEmpty()) {
+                                throw new Api.ApiException("МЭШ не вернул id работы "
+                                        + "(работа уже есть, но id не пришёл — "
+                                        + "переоткройте урок)");
+                            }
+                        }
+                        if (var != null
                                 && (oldVariant == null || !oldVariant.equals(var))) {
                             try {
                                 api.updateVariant(workId, var);
@@ -5079,6 +5122,7 @@ public final class MainActivity extends Activity {
                         int order = nextOrder(studentWork);
                         JSONArray regs = new JSONArray();
                         int failed = 0;
+                        String firstError = null;
                         for (PickedPhoto p : files) {
                             try {
                                 JSONObject acc = api.storageAccess(workId);
@@ -5086,30 +5130,42 @@ public final class MainActivity extends Activity {
                                 String tok = Api.s(acc, "token");
                                 String uuid = Api.s(acc, "file_uuid");
                                 if (link.isEmpty() || tok.isEmpty() || uuid.isEmpty()) {
-                                    throw new Api.ApiException("нет доступа к хранилищу");
+                                    throw new Api.ApiException(
+                                            "нет доступа к хранилищу: " + acc);
                                 }
                                 api.uploadFile(link, tok, p.name, "image/jpeg", p.data);
+                                String ext = "jpg";
+                                int dot = p.name.lastIndexOf('.');
+                                if (dot > 0 && dot < p.name.length() - 1) {
+                                    ext = p.name.substring(dot + 1).toLowerCase();
+                                }
                                 JSONObject f = new JSONObject();
                                 Api.put(f, "file_uuid", uuid);
                                 Api.put(f, "file_name", p.name);
                                 Api.put(f, "order_number", order++);
                                 Api.put(f, "size", p.data.length);
-                                Api.put(f, "extension", "jpg");
+                                Api.put(f, "extension", ext);
                                 regs.put(f);
                             } catch (Exception e) {
                                 failed++;
+                                if (firstError == null) firstError = e.getMessage();
                             }
                         }
 
                         if (regs.length() > 0) api.upsertFiles(workId, regs);
 
                         final int bad = failed;
+                        final String why = firstError;
                         ui.post(new Runnable() {
                             @Override public void run() {
                                 pd.dismiss();
                                 uploading = false;
                                 if (bad == files.size()) {
-                                    toast("Не удалось отправить работу");
+                                    if (why == null || why.isEmpty()) {
+                                        toast("Не удалось отправить работу");
+                                    } else {
+                                        errorDialog(new Exception(why));
+                                    }
                                 } else {
                                     pending.clear();
                                     toast(bad == 0
@@ -5141,7 +5197,10 @@ public final class MainActivity extends Activity {
                 if (files != null) {
                     for (int i = 0; i < files.length(); i++) {
                         JSONObject f = files.optJSONObject(i);
-                        if (f != null) max = Math.max(max, f.optInt("ordinal", 0));
+                        if (f == null) continue;
+                        int n = (int) Api.numLong(f, "ordinal");
+                        if (n == 0) n = (int) Api.numLong(f, "order_number");
+                        max = Math.max(max, n);
                     }
                 }
             }
@@ -5163,8 +5222,7 @@ public final class MainActivity extends Activity {
         }
 
         private void deleteFile(final String fileId) {
-            final String workId = studentWork == null
-                    ? "" : Api.s(studentWork, "student_work_id");
+            final String workId = Api.workId(studentWork);
             if (workId.isEmpty()) return;
             final ProgressDialog pd = new ProgressDialog(MainActivity.this);
             pd.setMessage("Удаляю…");
@@ -5785,6 +5843,13 @@ public final class MainActivity extends Activity {
             @Override public void onClick(View v) { d.dismiss(); }
         });
         head.addView(close, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        final ImageView themeBtn = icon(R.drawable.ic_theme,
+                cdzDark ? ACCENT : MUTED, 20);
+        themeBtn.setPadding(dp(10), dp(10), dp(10), dp(10));
+        themeBtn.setBackground(rippleBg(0x00000000, 20));
+        themeBtn.setContentDescription(cdzDark ? "Светлая тема" : "Тёмная тема");
+        head.addView(themeBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
         root.addView(head);
 
         View line = new View(this);
@@ -5813,6 +5878,21 @@ public final class MainActivity extends Activity {
         s.setAllowFileAccess(false);
         s.setUserAgentString(Api.UA);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+
+        web.setBackgroundColor(cdzDark ? 0xFF12110F : BG);
+        themeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                cdzDark = !cdzDark;
+                prefs.edit().putString("cdz_theme", cdzDark ? "dark" : "light")
+                        .apply();
+                themeBtn.setColorFilter(cdzDark ? ACCENT : MUTED);
+                themeBtn.setContentDescription(
+                        cdzDark ? "Светлая тема" : "Тёмная тема");
+                web.setBackgroundColor(cdzDark ? 0xFF12110F : BG);
+                web.evaluateJavascript("window.__schPaper&&window.__schPaper.set("
+                        + cdzDark + ")", null);
+            }
+        });
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -5858,7 +5938,10 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String u) {
                 super.onPageFinished(view, u);
                 String js = cdzTheme();
-                if (!js.isEmpty()) view.evaluateJavascript(js, null);
+                if (!js.isEmpty()) {
+                    view.evaluateJavascript(
+                            "window.__schDark=" + cdzDark + ";" + js, null);
+                }
             }
 
             @Override
