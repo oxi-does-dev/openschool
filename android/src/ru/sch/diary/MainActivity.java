@@ -5935,6 +5935,14 @@ public final class MainActivity extends Activity {
         });
         web.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String u, android.graphics.Bitmap icon) {
+                super.onPageStarted(view, u, icon);
+                // Прячем страницу до покраски: иначе видно, как светлая
+                // версия переключается в тёмную.
+                view.setAlpha(0f);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String u) {
                 super.onPageFinished(view, u);
                 String js = cdzTheme();
@@ -5942,6 +5950,11 @@ public final class MainActivity extends Activity {
                     view.evaluateJavascript(
                             "window.__schDark=" + cdzDark + ";" + js, null);
                 }
+                view.postDelayed(new Runnable() {
+                    @Override public void run() {
+                        view.animate().alpha(1f).setDuration(160).start();
+                    }
+                }, 180);
             }
 
             @Override

@@ -1,81 +1,43 @@
 (function () {
-  var VERSION = 3;
-  var BASE_ID = 'sch-paper-theme';
-  var THEME_ID = 'sch-paper-colors';
+  var VERSION = 4;
 
-  // Палитра тёмной темы повторяет applyPalette() из MainActivity, чтобы
-  // страница ЦДЗ и рамка приложения выглядели одним целым.
-  var P_LIGHT = {
+  var BASE_ID = 'sch-paper-theme';   // шрифты, фон, ссылки, контролы, скроллбар
+  var SITE_ID = 'sch-paper-site';    // перекрашенные правила самого ЦДЗ
+  var DYN_ID = 'sch-paper-dyn';      // правила для inline-стилей
+
+  // Тёмная палитра совпадает с applyPalette() приложения, чтобы страница
+  // и рамка окна выглядели одним целым.
+  var LIGHT = {
     bg: '#F5EFE2', surface: '#FFFCF4', surface2: '#EDE5D3',
     ink: '#2B2A26', muted: '#7A7365', accent: '#34577D',
     accentBg: '#34577D', onAccent: '#FFFCF4', soft: '#EDE5D3',
     line: '#D3C7AE'
   };
-  var P_DARK = {
-    bg: '#171613', surface: '#201E1A', surface2: '#2A2721',
+  var DARK = {
+    bg: '#171613', surface: '#1E1C18', surface2: '#2A2721',
     ink: '#EAE3D5', muted: '#A79D8B', accent: '#8FB0D4',
-    accentBg: '#34577D', onAccent: '#F6F0E4', soft: '#26333F',
+    accentBg: '#34577D', onAccent: '#F3EDE1', soft: '#26333F',
     line: '#3E392F'
   };
 
-  var isDarkOn = false;
-  var P = P_LIGHT;
+  var isDarkOn = !!window.__schDark;
 
-  // Повторная инъекция на той же странице: просто переключаем тему.
   if (window.__schPaper && window.__schPaper.version === VERSION) {
     if (window.__schDark !== undefined) window.__schPaper.set(!!window.__schDark);
     return;
   }
 
-  // Что мы сами записали в inline-стили: нужно, чтобы вернуть исходное
-  // состояние при смене темы или когда React меняет класс задания.
-  var orig = new WeakMap();
+  // --- цветовые утилиты -----------------------------------------------------
 
-  function hslHex(h, s, l) {
-    s = Math.max(0, Math.min(100, s)) / 100;
-    l = Math.max(0, Math.min(100, l)) / 100;
-    var c = (1 - Math.abs(2 * l - 1)) * s;
-    var hp = (((h % 360) + 360) % 360) / 60;
-    var x = c * (1 - Math.abs((hp % 2) - 1));
-    var r = 0, g = 0, b = 0;
-    if (hp < 1) { r = c; g = x; }
-    else if (hp < 2) { r = x; g = c; }
-    else if (hp < 3) { g = c; b = x; }
-    else if (hp < 4) { g = x; b = c; }
-    else if (hp < 5) { r = x; b = c; }
-    else { r = c; b = x; }
-    var m = l - c / 2;
-    var out = '#' + [r, g, b].map(function (v) {
-      var n = Math.round((v + m) * 255);
-      n = n < 0 ? 0 : n > 255 ? 255 : n;
-      return ('0' + n.toString(16)).slice(-2);
-    }).join('');
-    return out;
-  }
-
-  function parseColor(str) {
-    if (!str) return null;
-    str = String(str).trim();
-    var hex = str.match(/^#([0-9a-f]{3,8})$/i);
-    if (hex) {
-      var h = hex[1];
-      if (h.length === 3 || h.length === 4) {
-        h = h.split('').map(function (ch) { return ch + ch; }).join('');
-      }
-      if (h.length !== 6 && h.length !== 8) return null;
-      var r = parseInt(h.substr(0, 2), 16) / 255;
-      var g = parseInt(h.substr(2, 2), 16) / 255;
-      var b = parseInt(h.substr(4, 2), 16) / 255;
-      var a = h.length === 8 ? parseInt(h.substr(6, 2), 16) / 255 : 1;
-      return hslOf(r, g, b, a);
-    }
-    var m = str.match(/rgba?\(([^)]+)\)/);
-    if (!m) return null;
-    var p = m[1].split(',').map(function (x) { return parseFloat(x); });
-    if (p.length < 3) return null;
-    var alpha = p.length > 3 ? p[3] : 1;
-    return hslOf(p[0] / 255, p[1] / 255, p[2] / 255, alpha);
-  }
+  var NAMES = {
+    transparent: 'rgba(0,0,0,0)', white: '#ffffff', black: '#000000',
+    gray: '#808080', grey: '#808080', silver: '#c0c0c0', gainsboro: '#dcdcdc',
+    whitesmoke: '#f5f5f5', snow: '#fffafa', ivory: '#fffff0',
+    red: '#ff0000', green: '#008000', blue: '#0000ff', navy: '#000080',
+    teal: '#008080', olive: '#808000', maroon: '#800000', purple: '#800080',
+    orange: '#ffa500', yellow: '#ffff00', pink: '#ffc0cb', lime: '#00ff00',
+    aqua: '#00ffff', cyan: '#00ffff', magenta: '#ff00ff', fuchsia: '#ff00ff'
+  };
 
   function hslOf(r, g, b, a) {
     var max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -92,350 +54,582 @@
     return { h: h, s: s, l: l, a: a };
   }
 
-  // --- базовый слой: шрифты и форма, не зависит от темы --------------------
+  function parseColor(str) {
+    if (!str) return null;
+    str = String(str).trim().toLowerCase();
+    if (str.indexOf('currentcolor') === 0) return null;
+    if (NAMES[str]) str = NAMES[str];
+    var hex = str.match(/^#([0-9a-f]{3,8})$/);
+    if (hex) {
+      var h = hex[1];
+      if (h.length === 3 || h.length === 4) {
+        h = h.split('').map(function (c) { return c + c; }).join('');
+      }
+      if (h.length !== 6 && h.length !== 8) return null;
+      return hslOf(
+        parseInt(h.substr(0, 2), 16) / 255,
+        parseInt(h.substr(2, 2), 16) / 255,
+        parseInt(h.substr(4, 2), 16) / 255,
+        h.length === 8 ? parseInt(h.substr(6, 2), 16) / 255 : 1);
+    }
+    var m = str.match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    var p = m[1].split(',').map(function (x) { return parseFloat(x); });
+    if (p.length < 3) return null;
+    return hslOf(p[0] / 255, p[1] / 255, p[2] / 255, p.length > 3 ? p[3] : 1);
+  }
+
+  // Цвет внутри shorthand («1px solid #ddd»): без картинок и градиентов.
+  function shorthandColor(value) {
+    if (!value || /url\(|gradient\(/i.test(value)) return null;
+    var toks = String(value).split(/[\s,]+/);
+    for (var i = 0; i < toks.length; i++) {
+      if (toks[i] && parseColor(toks[i])) return toks[i];
+    }
+    return null;
+  }
+
+  function hslHex(h, s, l) {
+    s = Math.max(0, Math.min(100, s)) / 100;
+    l = Math.max(0, Math.min(100, l)) / 100;
+    var c = (1 - Math.abs(2 * l - 1)) * s;
+    var hp = (((h % 360) + 360) % 360) / 60;
+    var x = c * (1 - Math.abs((hp % 2) - 1));
+    var r = 0, g = 0, b = 0;
+    if (hp < 1) { r = c; g = x; }
+    else if (hp < 2) { r = x; g = c; }
+    else if (hp < 3) { g = c; b = x; }
+    else if (hp < 4) { g = x; b = c; }
+    else if (hp < 5) { r = x; b = c; }
+    else { r = c; b = x; }
+    var m = l - c / 2;
+    return '#' + [r, g, b].map(function (v) {
+      var n = Math.round((v + m) * 255);
+      n = n < 0 ? 0 : n > 255 ? 255 : n;
+      return ('0' + n.toString(16)).slice(-2);
+    }).join('');
+  }
+
+  function isBlue(c) { return c.h >= 195 && c.h <= 300; }
+
+  function isInlineTag(tag) {
+    return tag === 'SPAN' || tag === 'A' || tag === 'CODE' || tag === 'MARK' ||
+        tag === 'KBD' || tag === 'SAMP' || tag === 'SMALL' || tag === 'LABEL' ||
+        tag === 'STRONG' || tag === 'EM' || tag === 'B' || tag === 'I' ||
+        tag === 'U' || tag === 'S' || tag === 'CITE' || tag === 'ABBR';
+  }
+
+  // --- что во что превращается ----------------------------------------------
+
+  // Фон. inline — плашка внутри текста, ей нужен второй уровень поверхности.
+  function mapBg(c, dark, inline) {
+    if (!c || c.a < 0.4) return null;
+    if (!dark) {
+      // Цветные плашки в светлой теме не трогаем — они и так родные.
+      if (c.s > 0.15) {
+        if (c.s > 0.25 && c.l > 0.2 && c.l < 0.8 && isBlue(c)) return LIGHT.accentBg;
+        if (c.s > 0.12 && c.l > 0.85 && c.l <= 0.97 && isBlue(c)) return LIGHT.soft;
+        return null;
+      }
+      if (c.l >= 0.97) return LIGHT.surface;
+      if (c.l >= 0.9) return LIGHT.surface2;
+      return null;
+    }
+    if (c.l < 0.14) return null;                        // уже тёмный
+    if (c.s > 0.26 && c.l > 0.16 && c.l < 0.74) {
+      return isBlue(c) ? DARK.accentBg : hslHex(c.h, 34, 24);
+    }
+    if (c.s > 0.18 && c.l >= 0.74) return hslHex(c.h, 26, 17);
+    if (c.l >= 0.97) return inline ? DARK.surface2 : DARK.surface;
+    if (c.l >= 0.9) return DARK.bg;
+    if (c.l > 0.62) return DARK.surface2;
+    return null;
+  }
+
+  function mapFg(c, dark) {
+    if (!c) return null;
+    if (!dark) return null;
+    if (c.l > 0.66) return null;                        // уже светлый
+    if (c.s > 0.3 && c.l < 0.66) return hslHex(c.h, 58, 76);
+    if (c.l < 0.34) return DARK.ink;
+    return DARK.muted;
+  }
+
+  function mapBorder(c, dark) {
+    if (!c || c.a < 0.15) return null;
+    if (dark) {
+      if (c.l > 0.5) return DARK.line;
+      if (c.l > 0.25) return '#2C2821';
+      return null;
+    }
+    if (c.l > 0.85) return LIGHT.line;
+    return null;
+  }
+
+  function mapInk(c, dark) {
+    if (!c || !dark) return null;
+    if (c.l < 0.2) return DARK.ink;
+    if (c.l < 0.55) return hslHex(c.h, 24, 82);
+    return null;
+  }
+
+  // --- статическая база (обе темы в одном листе, переключение — класс) ------
 
   var BASE_CSS = [
+    'html:not(.sch-dark){color-scheme:light;}',
+    'html.sch-dark{color-scheme:dark;}',
+    'html:not(.sch-dark) body{background:#F5EFE2 !important;',
+    '  background-image:none !important;color:#2B2A26 !important;}',
+    'html.sch-dark body{background:#171613 !important;',
+    '  background-image:none !important;color:#EAE3D5 !important;}',
     'body{font-family:"PT Serif",Georgia,"Times New Roman",serif !important;}',
     'h1,h2,h3,h4,h5,h6{font-family:"PT Serif",Georgia,serif !important;}',
-    'button,input,select,textarea{',
-    '  font-family:"Golos Text",Arial,sans-serif !important;',
-    '  border-radius:3px !important;box-shadow:none !important;}',
-    'button,[role="button"]{border-radius:3px !important;box-shadow:none !important;}'
-  ].join('\n');
+    'button,input,select,textarea{font-family:"Golos Text",Arial,sans-serif !important;',
+    '  border-radius:3px !important;}',
+    'button,[role="button"]{border-radius:3px !important;}',
+    'html:not(.sch-dark) a{color:#34577D !important;}',
+    'html.sch-dark a{color:#8FB0D4 !important;}',
+    'html:not(.sch-dark) ::selection{background:#D9CEB8;color:#2B2A26;}',
+    'html.sch-dark ::selection{background:#34577D;color:#F3EDE1;}',
+    'html.sch-dark input,html.sch-dark textarea,html.sch-dark select{',
+    '  background:#1E1C18 !important;color:#EAE3D5 !important;',
+    '  border-color:#3E392F !important;}',
+    'html.sch-dark input::placeholder,html.sch-dark textarea::placeholder{',
+    '  color:#7D7466 !important;}',
+    'html.sch-dark ::-webkit-scrollbar{width:10px;height:10px;background:#171613;}',
+    'html.sch-dark ::-webkit-scrollbar-thumb{background:#3E392F;border-radius:6px;}',
+    'html.sch-dark ::-webkit-scrollbar-thumb:hover{background:#4A4438;}',
+    'html.sch-dark ::-webkit-scrollbar-corner{background:#171613;}',
+    // монохромные SVG-иконки: заливка чёрным по атрибуту
+    'html.sch-dark svg [fill="#000"],html.sch-dark svg [fill="#000000"],',
+    'html.sch-dark svg [fill="#212529"],html.sch-dark svg [fill="black"]{',
+    '  fill:currentColor !important;}',
+    'html.sch-dark svg [stroke="#000"],html.sch-dark svg [stroke="#000000"],',
+    'html.sch-dark svg [stroke="#212529"],html.sch-dark svg [stroke="black"]{',
+    '  stroke:currentColor !important;}'
+  ].join('');
 
-  function themeCss(dk) {
-    if (!dk) {
-      return [
-        'html,body{background:#F5EFE2 !important;background-image:none !important;}',
-        'body{color:#2B2A26 !important;}',
-        'a{color:#34577D !important;}',
-        '::selection{background:#D9CEB8;color:#2B2A26;}'
-      ].join('\n');
-    }
-    return [
-      'html{color-scheme:dark;}',
-      'html,body{background:#171613 !important;background-image:none !important;}',
-      'body{color:#EAE3D5 !important;}',
-      'a{color:#8FB0D4 !important;}',
-      '::selection{background:#34577D;color:#F6F0E4;}',
-      'input,textarea,select{background:#201E1A !important;color:#EAE3D5 !important;',
-      '  border-color:#3E392F !important;}',
-      'input::placeholder,textarea::placeholder{color:#7D7466 !important;}',
-      '::-webkit-scrollbar{width:10px;height:10px;background:#171613;}',
-      '::-webkit-scrollbar-thumb{background:#3E392F;border-radius:6px;}',
-      '::-webkit-scrollbar-thumb:hover{background:#4A4438;}',
-      '::-webkit-scrollbar-corner{background:#171613;}'
-    ].join('\n');
-  }
-
-  function ensureStyle(doc, id, css) {
-    var st = doc.getElementById(id);
+  function addBase() {
+    var doc = document;
+    if (!doc.documentElement) return;
+    var st = doc.getElementById(BASE_ID);
     if (!st) {
       st = doc.createElement('style');
-      st.id = id;
+      st.id = BASE_ID;
       (doc.head || doc.documentElement).appendChild(st);
     }
+    if (st.textContent !== BASE_CSS) st.textContent = BASE_CSS;
+  }
+
+  // --- перекраска CSS самого ЦДЗ -------------------------------------------
+
+  // Из правила сайта делаем своё: тот же селектор + наша тема и !important.
+  // Стили страницы при этом не трогаются, React ничего не «возвращает»,
+  // поэтому ничего не мигает; переключение темы — один класс на <html>.
+  function rootSelector(sel) {
+    return /(^|[\s,>+~])(html|body)\b/i.test(sel);
+  }
+
+  function scopeSelectors(sel, dark) {
+    var root = dark ? 'html.sch-dark' : 'html:not(.sch-dark)';
+    var parts = String(sel).split(',');
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var one = parts[i].trim();
+      if (!one) continue;
+      if (one.indexOf(':root') === 0) out.push(one.replace(':root', root));
+      else if (/^html\b/i.test(one)) out.push(one.replace(/^html/i, root));
+      else out.push(root + ' ' + one);
+    }
+    return out.join(',');
+  }
+
+  // По имени переменной понять, фон это или текст.
+  function customKind(name) {
+    var n = name.toLowerCase();
+    if (/(text|color|fg|ink|font|label|link|icon)/.test(n)) return 'fg';
+    if (/(bg|background|surface|card|paper|panel|fill|border|line|stroke|shadow)/.test(n)) return 'bg';
+    return null;
+  }
+
+  function ruleDecls(style, sel) {
+    var light = [], dark = [];
+    var push = function (prop, lv, dv) {
+      if (lv) light.push(prop + ':' + lv + ' !important');
+      if (dv) dark.push(prop + ':' + dv + ' !important');
+    };
+
+    if (!rootSelector(sel)) {
+      var bgRaw = style.getPropertyValue('background-color') ||
+          shorthandColor(style.getPropertyValue('background'));
+      var bg = parseColor(bgRaw);
+      if (bg) push('background-color', mapBg(bg, false, false), mapBg(bg, true, false));
+    }
+
+    var fg = parseColor(style.getPropertyValue('color'));
+    if (fg) push('color', mapFg(fg, false), mapFg(fg, true));
+
+    var borderRaw = style.getPropertyValue('border-color') ||
+        style.getPropertyValue('border-top-color') ||
+        shorthandColor(style.getPropertyValue('border')) ||
+        shorthandColor(style.getPropertyValue('border-top'));
+    var border = parseColor(borderRaw);
+    if (border) push('border-color', mapBorder(border, false), mapBorder(border, true));
+
+    var fill = parseColor(style.getPropertyValue('fill'));
+    if (fill) push('fill', mapInk(fill, false), mapInk(fill, true));
+
+    var stroke = parseColor(style.getPropertyValue('stroke'));
+    if (stroke) push('stroke', mapInk(stroke, false), mapInk(stroke, true));
+
+    // CSS-переменные: сайт часто пишет --bg: #fff, а элементы используют
+    // var(--bg). Перекрашиваем саму переменную, иначе всё останется белым.
+    for (var i = 0; i < style.length; i++) {
+      var name = style[i];
+      if (name.indexOf('--') !== 0) continue;
+      var c = parseColor(style.getPropertyValue(name));
+      if (!c) continue;
+      var kind = customKind(name);
+      if (!kind) kind = c.l > 0.7 ? 'bg' : 'fg';
+      var v = kind === 'bg' ? mapBg(c, true, false) : mapFg(c, true);
+      if (v) dark.push(name + ':' + v + ' !important');
+    }
+
+    return (light.length || dark.length) ? { light: light, dark: dark } : null;
+  }
+
+  var scanned = [];        // [{sheet, count, index}]
+  var siteEntries = [];    // [{wrappers, sel, light[], dark[]}]
+
+  function readGroup(rules, wrappers, out) {
+    if (!rules) return;
+    for (var i = 0; i < rules.length; i++) {
+      var rule = rules[i];
+      try {
+        if (rule.type === 1) {                       // CSSStyleRule
+          var d = ruleDecls(rule.style, rule.selectorText || '');
+          if (d) {
+            out.push({
+              wrappers: wrappers, sel: rule.selectorText,
+              light: d.light, dark: d.dark
+            });
+          }
+        } else if (rule.type === 4) {                // @media
+          readGroup(rule.cssRules, wrappers.concat('@media ' + rule.conditionText), out);
+        } else if (rule.type === 12) {               // @supports
+          readGroup(rule.cssRules, wrappers.concat('@supports ' + rule.conditionText), out);
+        } else if (rule.type === 3 && rule.styleSheet) {  // @import
+          readGroup(rule.styleSheet.cssRules, wrappers, out);
+        }
+      } catch (e) { }
+    }
+  }
+
+  function siteCss() {
+    var css = [];
+    for (var i = 0; i < siteEntries.length; i++) {
+      var batch = siteEntries[i];
+      for (var j = 0; j < batch.length; j++) {
+        var e = batch[j];
+        var parts = [];
+        if (e.light.length) {
+          parts.push(scopeSelectors(e.sel, false) + '{' + e.light.join(';') + '}');
+        }
+        if (e.dark.length) {
+          parts.push(scopeSelectors(e.sel, true) + '{' + e.dark.join(';') + '}');
+        }
+        if (!parts.length) continue;
+        var open = '', close = '';
+        for (var k = 0; k < e.wrappers.length; k++) {
+          open += e.wrappers[k] + '{';
+          close += '}';
+        }
+        css.push(open + parts.join('') + close);
+      }
+    }
+    return css.join('');
+  }
+
+  function rebuildSite() {
+    var doc = document;
+    if (!doc.documentElement) return;
+    var st = doc.getElementById(SITE_ID);
+    if (!st) {
+      st = doc.createElement('style');
+      st.id = SITE_ID;
+      (doc.head || doc.documentElement).appendChild(st);
+    }
+    var css = siteCss();
     if (st.textContent !== css) st.textContent = css;
-    return st;
   }
 
-  function addStyles(doc) {
-    if (!doc || !doc.documentElement) return;
-    ensureStyle(doc, BASE_ID, BASE_CSS);
-    ensureStyle(doc, THEME_ID, themeCss(isDarkOn));
+  // Пересобираем только таблицы, которые появились или выросли: CSS-in-JS
+  // (styled-components и подобное) дописывает правила в уже существующий <style>.
+  function ours(sheet) {
+    var node = sheet && sheet.ownerNode;
+    var id = node && node.id;
+    return id === BASE_ID || id === SITE_ID || id === DYN_ID;
   }
 
-  // --- правка inline-стилей -------------------------------------------------
-
-  function setProp(el, prop, value) {
-    var rec = orig.get(el);
-    if (!rec) {
-      rec = {};
-      orig.set(el, rec);
+  function scanSheets(force) {
+    var list = document.styleSheets || [];
+    var fresh = false;
+    for (var i = 0; i < list.length; i++) {
+      var sheet = list[i];
+      if (!sheet || ours(sheet)) continue;
+      var count;
+      try {
+        if (!sheet.cssRules) continue;
+        count = sheet.cssRules.length;
+      } catch (e) { continue; }
+      var known = null;
+      for (var j = 0; j < scanned.length; j++) {
+        if (scanned[j].sheet === sheet) { known = scanned[j]; break; }
+      }
+      if (known && known.count === count) continue;
+      var out = [];
+      try { readGroup(sheet.cssRules, [], out); } catch (e) { }
+      if (known) {
+        siteEntries[known.index] = out;
+        known.count = count;
+      } else {
+        siteEntries.push(out);
+        scanned.push({ sheet: sheet, count: count, index: siteEntries.length - 1 });
+      }
+      fresh = true;
     }
-    if (!rec[prop]) {
-      rec[prop] = {
-        v: el.style.getPropertyValue(prop),
-        p: el.style.getPropertyPriority(prop)
-      };
-    }
-    el.style.setProperty(prop, value, 'important');
-    rec[prop].ours = el.style.getPropertyValue(prop);
+    if (fresh || force) rebuildSite();
   }
 
-  function restore(el) {
-    var rec = orig.get(el);
-    if (!rec) return;
-    orig.delete(el);
-    for (var prop in rec) {
-      var r = rec[prop];
-      var cur = el.style.getPropertyValue(prop);
-      // Пока мы держали значение, React мог записать своё — его не трогаем.
-      if (r.ours !== undefined && cur !== r.ours) continue;
-      if (r.v) el.style.setProperty(prop, r.v, r.p);
-      else el.style.removeProperty(prop);
+  // --- inline-стили: свои правила по data-атрибуту --------------------------
+  // Атрибут React не перезаписывает (в отличие от style), значение меняется
+  // только когда меняется сам цвет, — мигать нечему.
+
+  var dynSheet = null;
+  var dynCache = {};
+  var dynSeq = 0;
+
+  function dynStyle() {
+    if (dynSheet && dynSheet.ownerNode && dynSheet.ownerNode.isConnected) return dynSheet;
+    var st = document.getElementById(DYN_ID);
+    if (!st) {
+      st = document.createElement('style');
+      st.id = DYN_ID;
+      (document.head || document.documentElement).appendChild(st);
     }
+    dynSheet = st.sheet;
+    return dynSheet;
   }
 
-  // React поменял inline-стиль мимо нас?
-  function styleChanged(el) {
-    var rec = orig.get(el);
-    if (!rec) return false;
-    for (var prop in rec) {
-      var r = rec[prop];
-      if (r.ours === undefined) continue;
-      if (el.style.getPropertyValue(prop) !== r.ours) return true;
+  function dynId(attr, css) {
+    var key = attr + '|' + css;
+    if (dynCache[key]) return dynCache[key];
+    var id = 'k' + (++dynSeq).toString(36);
+    var root = attr === 'data-sch-d' ? 'html.sch-dark ' : 'html:not(.sch-dark) ';
+    try {
+      var sheet = dynStyle();
+      sheet.insertRule(root + '[' + attr + '="' + id + '"]{' + css + '}',
+          sheet.cssRules.length);
+    } catch (e) { }
+    dynCache[key] = id;
+    return id;
+  }
+
+  function applyDecls(el, attr, decls) {
+    var css = decls.join(';');
+    if (!css) {
+      if (el.hasAttribute(attr)) el.removeAttribute(attr);
+      return;
+    }
+    var id = dynId(attr, css);
+    if (el.getAttribute(attr) !== id) el.setAttribute(attr, id);
+  }
+
+  function colorProps(style) {
+    for (var i = 0; i < style.length; i++) {
+      var p = style[i];
+      if (p === 'color' || p === 'background' || p === 'background-color' ||
+          p === 'fill' || p === 'stroke' || p.indexOf('border') === 0) return true;
     }
     return false;
   }
 
-  // Ближайший непрозрачный фон над элементом. l === null — под элементом
-  // картинка, такой текст не перекрашиваем, иначе он потеряется на фото.
-  function backdrop(el) {
-    var n = el, depth = 0;
-    while (n && n.nodeType === 1 && depth < 12) {
-      var st;
-      try { st = getComputedStyle(n); } catch (e) { return { l: null, img: true }; }
-      var bgImg = st.backgroundImage;
-      if (bgImg && bgImg !== 'none' && bgImg.indexOf('gradient') < 0) {
-        return { l: null, img: true };
-      }
-      var c = parseColor(st.backgroundColor);
-      if (c && c.a > 0.5) return { l: c.l, img: false };
-      n = n.parentElement;
-      depth++;
-    }
-    return { l: 1, img: false };
-  }
+  function evalInline(el) {
+    if (!el || el.nodeType !== 1 || !el.isConnected) return;
+    var st = el.style;
+    if (!st || !st.length || !colorProps(st)) return;
 
-  function isBlue(c) {
-    return c.h >= 195 && c.h <= 300;
-  }
-
-  function icon(el) {
-    if (!isDarkOn) return;
-    var r;
-    try { r = el.getBoundingClientRect(); } catch (e) { return; }
-    // Крупные SVG — иллюстрации, их не трогаем.
-    if (r.width > 56 || r.height > 56) return;
-    var nodes = el.querySelectorAll('path,circle,rect,polygon,line,polyline,ellipse');
-    var changed = false;
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i], st;
-      try { st = getComputedStyle(n); } catch (e) { continue; }
-      var f = parseColor(st.fill || n.getAttribute('fill'));
-      if (f && f.a > 0.3 && f.l < 0.55) {
-        setProp(n, 'fill', 'currentColor');
-        changed = true;
-      }
-      var s = parseColor(st.stroke || n.getAttribute('stroke'));
-      if (s && s.a > 0.3 && s.l < 0.55) {
-        setProp(n, 'stroke', 'currentColor');
-        changed = true;
-      }
-    }
-    if (changed) {
-      var cc = parseColor(getComputedStyle(el).color);
-      if (!cc || cc.l < 0.6) setProp(el, 'color', P.ink);
-    }
-  }
-
-  function paint(el) {
-    if (!el || el.nodeType !== 1) return;
     var tag = el.tagName.toUpperCase();
-    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'IMG' ||
-        tag === 'VIDEO' || tag === 'CANVAS' || tag === 'PICTURE' ||
-        tag === 'IFRAME') return;
-    if (tag === 'SVG') { icon(el); return; }
+    var light = [], dark = [];
 
-    var cs;
-    try { cs = getComputedStyle(el); } catch (e) { return; }
-    var r;
-    try { r = el.getBoundingClientRect(); } catch (e) { return; }
-    var big = r.width > 60 && r.height > 24;
-
-    var gradient = cs.backgroundImage && cs.backgroundImage.indexOf('gradient') >= 0;
-    if (gradient) {
-      setProp(el, 'background-image', 'none');
-      setProp(el, 'background-color', isDarkOn ? P.surface2 : P.accentBg);
-      if (r.height > 56) setProp(el, 'color', isDarkOn ? P.ink : P.onAccent);
+    var bg = parseColor(st.getPropertyValue('background-color') ||
+        shorthandColor(st.getPropertyValue('background')));
+    if (bg) {
+      var lb = mapBg(bg, false, isInlineTag(tag));
+      var db = mapBg(bg, true, isInlineTag(tag));
+      if (lb) light.push('background-color:' + lb + ' !important');
+      if (db) dark.push('background-color:' + db + ' !important');
     }
 
-    var c = gradient ? null : parseColor(cs.backgroundColor);
-    if (c && c.a > 0.4) {
-      if (!isDarkOn) {
-        if (c.s > 0.25 && c.l > 0.2 && c.l < 0.8 && isBlue(c)) {
-          setProp(el, 'background-color', P.accentBg);
-          setProp(el, 'background-image', 'none');
-        } else if (c.s > 0.12 && c.l > 0.85 && c.l <= 0.97 && isBlue(c)) {
-          setProp(el, 'background-color', P.soft);
-          setProp(el, 'background-image', 'none');
-        } else if (c.l > 0.93 && big) {
-          setProp(el, 'background-color', P.surface);
-          setProp(el, 'border', '1px solid ' + P.line);
-        }
-      } else {
-        if (c.s > 0.28 && c.l > 0.18 && c.l < 0.72) {
-          // Цветная плашка: сохраняем оттенок, иначе красное станет зелёным.
-          setProp(el, 'background-color',
-                  isBlue(c) ? P.accentBg : hslHex(c.h, 34, 24));
-        } else if (c.l >= 0.78 && c.s > 0.18) {
-          setProp(el, 'background-color',
-                  isBlue(c) ? P.soft : hslHex(c.h, 26, 20));
-        } else if (c.l > 0.9) {
-          setProp(el, 'background-color', big ? P.surface : P.surface2);
-        }
-      }
+    var fg = parseColor(st.getPropertyValue('color'));
+    if (fg) {
+      var df = mapFg(fg, true);
+      if (df) dark.push('color:' + df + ' !important');
     }
 
-    if (big && parseFloat(cs.borderTopLeftRadius) > 6) {
-      setProp(el, 'border-radius', '3px');
-    }
-    if (big && cs.boxShadow && cs.boxShadow !== 'none') {
-      setProp(el, 'box-shadow', 'none');
-    }
-
-    var bd = backdrop(el);
-    var fg = parseColor(cs.color);
-    if (fg && !bd.img) {
-      if (!isDarkOn) {
-        // Светлый фон + белый текст (неактивная кнопка) — читаемый серый.
-        if (fg.l > 0.8 && bd.l !== null && bd.l > 0.85) {
-          setProp(el, 'color', P.muted);
-        }
-      } else if (bd.l !== null && bd.l < 0.4) {
-        if (fg.s > 0.3 && fg.l < 0.66) {
-          setProp(el, 'color', hslHex(fg.h, 58, 74));
-        } else if (fg.l < 0.3) {
-          setProp(el, 'color', P.ink);
-        } else if (fg.l < 0.66) {
-          setProp(el, 'color', P.muted);
-        }
-      }
+    var border = parseColor(st.getPropertyValue('border-color') ||
+        shorthandColor(st.getPropertyValue('border')) ||
+        shorthandColor(st.getPropertyValue('border-top')));
+    if (border) {
+      var lbd = mapBorder(border, false), dbd = mapBorder(border, true);
+      if (lbd) light.push('border-color:' + lbd + ' !important');
+      if (dbd) dark.push('border-color:' + dbd + ' !important');
     }
 
-    if (isDarkOn) {
-      var sides = [
-        ['border-top-width', 'border-top-color'],
-        ['border-right-width', 'border-right-color'],
-        ['border-bottom-width', 'border-bottom-color'],
-        ['border-left-width', 'border-left-color']
-      ];
-      for (var i = 0; i < sides.length; i++) {
-        if (!(parseFloat(cs.getPropertyValue(sides[i][0])) > 0)) continue;
-        var bc = parseColor(cs.getPropertyValue(sides[i][1]));
-        if (bc && bc.a > 0.25 && bc.l > 0.55) {
-          setProp(el, sides[i][1], P.line);
-        }
-      }
+    var fill = parseColor(st.getPropertyValue('fill'));
+    if (fill) {
+      var dfl = mapInk(fill, true);
+      if (dfl) dark.push('fill:' + dfl + ' !important');
     }
+    var stroke = parseColor(st.getPropertyValue('stroke'));
+    if (stroke) {
+      var dst = mapInk(stroke, true);
+      if (dst) dark.push('stroke:' + dst + ' !important');
+    }
+
+    applyDecls(el, 'data-sch-l', light);
+    applyDecls(el, 'data-sch-d', dark);
   }
 
-  function paintTree(el) {
-    if (!el || el.nodeType !== 1) return;
+  var queue = [];
+  var queued = new Set();
+  var queueTimer = null;
+
+  function queueEl(el) {
+    if (!el || el.nodeType !== 1 || !el.isConnected) return;
+    if (!el.style || !el.style.length || !colorProps(el.style)) return;
+    if (queued.has(el)) return;
+    queued.add(el);
+    queue.push(el);
+  }
+
+  function queueTree(root) {
+    if (!root || root.nodeType !== 1) return;
+    queueEl(root);
     var list;
-    try { list = el.querySelectorAll('*'); } catch (e) { list = []; }
-    // Сначала снимаем свои прошлые правки, потом красим в порядке документа:
-    // иначе restore() потомка затрёт то, что иконка записала в path.
-    restore(el);
-    for (var i = 0; i < list.length; i++) restore(list[i]);
-    paint(el);
-    for (var j = 0; j < list.length; j++) paint(list[j]);
+    try { list = root.querySelectorAll('[style]'); } catch (e) { return; }
+    for (var i = 0; i < list.length; i++) queueEl(list[i]);
   }
 
-  var pending = [];
-  var pendingTimer = null;
-
-  function schedule(el) {
-    if (pending.indexOf(el) < 0) pending.push(el);
-    if (pendingTimer) return;
-    pendingTimer = setTimeout(function () {
-      pendingTimer = null;
-      var items = pending;
-      pending = [];
-      for (var i = 0; i < items.length; i++) {
-        var it = items[i];
-        if (it && it.isConnected) paintTree(it);
-      }
-    }, 60);
+  function flush() {
+    queueTimer = null;
+    var items = queue;
+    queue = [];
+    queued = new Set();
+    for (var i = 0; i < items.length; i++) {
+      try { evalInline(items[i]); } catch (e) { }
+    }
   }
 
-  function run(doc) {
-    if (!doc || !doc.documentElement) return;
-    addStyles(doc);
-    try {
-      var all = doc.querySelectorAll('body *');
-      for (var i = 0; i < all.length; i++) restore(all[i]);
-      for (var k = 0; k < all.length; k++) paint(all[k]);
-    } catch (e) { }
-    try {
-      var ifr = doc.querySelectorAll('iframe');
-      for (var j = 0; j < ifr.length; j++) {
-        try { run(ifr[j].contentDocument); } catch (e) { }
-      }
-    } catch (e) { }
+  function schedule() {
+    if (queueTimer) return;
+    queueTimer = setTimeout(flush, 80);
   }
 
-  var runTimer = null;
-
-  function scheduleRun() {
-    if (runTimer) return;
-    runTimer = setTimeout(function () {
-      runTimer = null;
-      run(document);
-    }, 150);
+  function queueAll() {
+    var list;
+    try { list = document.querySelectorAll('[style]'); } catch (e) { return; }
+    for (var i = 0; i < list.length; i++) queueEl(list[i]);
+    flush();
   }
 
-  function applyDark(dark) {
+  // --- тема ----------------------------------------------------------------
+
+  function applyClass(dark) {
+    var de = document.documentElement;
+    if (!de) return;
+    if (dark) de.classList.add('sch-dark');
+    else de.classList.remove('sch-dark');
+  }
+
+  function set(dark) {
     dark = !!dark;
-    if (dark === isDarkOn && document.getElementById(THEME_ID)) return;
+    var de = document.documentElement;
+    var has = !!(de && de.classList.contains('sch-dark'));
+    if (dark === isDarkOn && has === dark &&
+        document.getElementById(SITE_ID) && document.getElementById(BASE_ID)) {
+      return;
+    }
     isDarkOn = dark;
-    P = dark ? P_DARK : P_LIGHT;
     window.__schDarkOn = dark;
-    // Полный проход с restore(): цвета другой темы не должны остаться.
-    run(document);
+    addBase();
+    scanSheets(false);
+    applyClass(dark);
+    queueAll();
+  }
+
+  // --- наблюдатель ---------------------------------------------------------
+
+  var rescanTimer = null;
+
+  function scheduleRescan() {
+    if (rescanTimer) return;
+    rescanTimer = setTimeout(function () {
+      rescanTimer = null;
+      scanSheets(false);
+      queueAll();
+    }, 120);
   }
 
   function boot() {
-    P = window.__schDark ? P_DARK : P_LIGHT;
-    applyDark(!!window.__schDark);
+    addBase();
+    scanSheets(true);
+    applyClass(isDarkOn);
+    queueAll();
+    dynStyle();
     try {
       var mo = new MutationObserver(function (muts) {
-        var structural = false;
+        var needScan = false;
         for (var i = 0; i < muts.length; i++) {
           var m = muts[i];
-          if (m.type === 'childList') {
-            structural = true;
+          if (m.type === 'attributes') {
+            queueEl(m.target);
             continue;
           }
-          var el = m.target;
-          if (!el || el.nodeType !== 1) continue;
-          if (m.attributeName === 'style') {
-            if (styleChanged(el)) schedule(el);
-          } else {
-            schedule(el);
+          if (m.type !== 'childList') continue;
+          for (var j = 0; j < m.addedNodes.length; j++) {
+            var n = m.addedNodes[j];
+            if (!n || n.nodeType !== 1) continue;
+            var t = n.tagName.toUpperCase();
+            if (t === 'STYLE' || t === 'LINK') needScan = true;
+            if (n.style && n.style.length) queueEl(n);
+            if (n.querySelector && n.querySelector('[style]')) queueTree(n);
+            if (t === 'STYLE' && n.textContent && n.textContent.length) needScan = true;
           }
         }
-        if (structural) scheduleRun();
+        if (needScan) scheduleRescan();
+        if (queue.length) schedule();
       });
       mo.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['class', 'style', 'aria-selected', 'aria-checked',
-          'aria-pressed', 'aria-current', 'data-selected']
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['style']
       });
     } catch (e) { }
+    // Страховка: сайт иногда меняет <head> целиком или дописывает правила
+    // в уже существующий <style> (CSS-in-JS).
+    setTimeout(function () { scanSheets(false); queueAll(); }, 600);
     setInterval(function () {
-      addStyles(document);
-      if (!document.getElementById(THEME_ID)) applyDark(isDarkOn);
-    }, 2000);
+      if (!document.getElementById(BASE_ID)) addBase();
+      if (!document.getElementById(SITE_ID)) rebuildSite();
+      scanSheets(false);
+    }, 2500);
   }
 
   window.__schPaper = {
     version: VERSION,
-    set: applyDark,
-    isDark: function () { return isDarkOn; }
+    set: set,
+    isDark: function () { return isDarkOn; },
+    rescan: function () { scanSheets(true); queueAll(); }
   };
 
   if (document.readyState === 'loading') {
