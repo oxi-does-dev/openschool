@@ -10,14 +10,23 @@
   var LIGHT = {
     bg: '#F5EFE2', surface: '#FFFCF4', surface2: '#EDE5D3',
     ink: '#2B2A26', muted: '#7A7365', accent: '#34577D',
-    accentBg: '#34577D', onAccent: '#FFFCF4', soft: '#EDE5D3',
-    line: '#D3C7AE'
+    accentBg: '#34577D', onAccent: '#FFFFFF',
+    accentSoft: 'rgba(52,87,125,0.10)',
+    line: '#D3C7AE', divider: '#D9CEB8', rule: '#C9BDA6',
+    current: '#FFF8E6', green: '#2F6B4F', amber: '#9A6A22',
+    red: '#B0403A', teal: '#2F6B6B', violet: '#6F4A75',
+    errBg: '#F7E7E2', errStroke: '#D9B3A8', mark: '#4E7A3A'
   };
+  // Ровно applyPalette() приложения. Никаких «похожих» оттенков.
   var DARK = {
-    bg: '#171613', surface: '#1E1C18', surface2: '#2A2721',
+    bg: '#171613', surface: '#201E1A', surface2: '#2A2721',
     ink: '#EAE3D5', muted: '#A79D8B', accent: '#8FB0D4',
-    accentBg: '#34577D', onAccent: '#F3EDE1', soft: '#26333F',
-    line: '#3E392F'
+    accentBg: '#8FB0D4', onAccent: '#171613',
+    accentSoft: 'rgba(143,176,212,0.165)',
+    line: '#3E392F', divider: '#35312A', rule: '#4A4438',
+    current: '#2C2A20', green: '#85B394', amber: '#D6A960',
+    red: '#D9827A', teal: '#7FB8B8', violet: '#B79BC4',
+    errBg: '#33211D', errStroke: '#5A3A31', mark: '#A8C98A'
   };
 
   var isDarkOn = !!window.__schDark;
@@ -89,27 +98,6 @@
     return null;
   }
 
-  function hslHex(h, s, l) {
-    s = Math.max(0, Math.min(100, s)) / 100;
-    l = Math.max(0, Math.min(100, l)) / 100;
-    var c = (1 - Math.abs(2 * l - 1)) * s;
-    var hp = (((h % 360) + 360) % 360) / 60;
-    var x = c * (1 - Math.abs((hp % 2) - 1));
-    var r = 0, g = 0, b = 0;
-    if (hp < 1) { r = c; g = x; }
-    else if (hp < 2) { r = x; g = c; }
-    else if (hp < 3) { g = c; b = x; }
-    else if (hp < 4) { g = x; b = c; }
-    else if (hp < 5) { r = x; b = c; }
-    else { r = c; b = x; }
-    var m = l - c / 2;
-    return '#' + [r, g, b].map(function (v) {
-      var n = Math.round((v + m) * 255);
-      n = n < 0 ? 0 : n > 255 ? 255 : n;
-      return ('0' + n.toString(16)).slice(-2);
-    }).join('');
-  }
-
   function isAccentHue(c) { return c.h >= 195 && c.h <= 335; }
 
   function isInlineTag(tag) {
@@ -121,44 +109,90 @@
 
   // --- что во что превращается ----------------------------------------------
 
-  // Полупрозрачные цвета: сохраняем альфу, иначе исчезнут плёнки и тени.
+  // Разбираем цвет на точные r/g/b, без пересчёта через HSL: иначе
+  // #8FB0D4 после round-trip превращается в «почти такой же».
+  function rgbParts(str) {
+    if (!str) return null;
+    str = String(str).trim().toLowerCase();
+    if (NAMES[str]) str = NAMES[str];
+    var hex = str.match(/^#([0-9a-f]{3,8})$/);
+    if (hex) {
+      var h = hex[1];
+      if (h.length === 3 || h.length === 4) {
+        h = h.split('').map(function (c) { return c + c; }).join('');
+      }
+      if (h.length !== 6 && h.length !== 8) return null;
+      return {
+        r: parseInt(h.substr(0, 2), 16),
+        g: parseInt(h.substr(2, 2), 16),
+        b: parseInt(h.substr(4, 2), 16),
+        a: h.length === 8 ? parseInt(h.substr(6, 2), 16) / 255 : 1
+      };
+    }
+    var m = str.match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    var p = m[1].split(',').map(function (x) { return parseFloat(x); });
+    if (p.length < 3) return null;
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+
+  // Точная палитра приложения: цвет + альфа, как 0xAARRGGBB в applyPalette().
   function withAlpha(color, a) {
-    var c = parseColor(color);
+    var c = rgbParts(color);
     if (!c) return color;
-    var hex = hslHex(c.h, c.s * 100, c.l * 100);
-    var r = parseInt(hex.substr(1, 2), 16);
-    var g = parseInt(hex.substr(3, 2), 16);
-    var b = parseInt(hex.substr(5, 2), 16);
     a = Math.max(0, Math.min(1, a));
-    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + Math.round(a * 100) / 100 + ')';
+    return 'rgba(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' +
+        Math.round(c.b) + ', ' + Math.round(a * 1000) / 1000 + ')';
+  }
+
+  // Мягкая подложка метки — ровно soft() из приложения: цвет + 0x22.
+  function softOf(color) { return withAlpha(color, 0x22 / 255); }
+
+  // Цветовой тон → роль в палитре приложения.
+  function roleOf(c) {
+    if (!c || c.s < 0.22) return null;
+    var h = c.h;
+    if (h < 20 || h >= 340) return 'red';
+    if (h < 70) return 'amber';
+    if (h < 175) return 'green';
+    if (h < 200) return 'teal';
+    if (h < 250) return 'blue';
+    return 'violet';
+  }
+
+  function roleColor(c, dark) {
+    var role = roleOf(c);
+    if (!role) return null;
+    var p = dark ? DARK : LIGHT;
+    return role === 'blue' ? p.accent : p[role];
   }
 
   function mapBgSolid(c, dark, inline) {
+    var p = dark ? DARK : LIGHT;
+    if (c.l < 0.12) return null;                        // уже тёмный
+    var role = roleOf(c);
+
     if (!dark) {
-      // Цветные плашки в светлой теме не трогаем — они и так родные.
-      if (c.s > 0.15) {
-        if (c.s > 0.25 && c.l > 0.2 && c.l < 0.8 && isAccentHue(c)) return LIGHT.accentBg;
-        if (c.s > 0.12 && c.l > 0.85 && c.l <= 0.97 && isAccentHue(c)) return LIGHT.soft;
-        return null;
-      }
+      // Светлая бумага: синие заливки ведём в акцент, остальные не трогаем.
+      if (role === 'blue' && c.l > 0.18 && c.l < 0.85) return LIGHT.accentBg;
+      if (role) return null;
       if (c.l >= 0.97) return LIGHT.surface;
       if (c.l >= 0.9) return LIGHT.surface2;
       return null;
     }
-    if (c.l < 0.14) return null;                        // уже тёмный
-    if (c.s > 0.26 && c.l > 0.16 && c.l < 0.74) {
-      // Синий остаётся синим, фиолетовый бренд — фиолетовым, остальные
-      // цветные плашки просто приглушаются, сохраняя свой оттенок.
-      if (isAccentHue(c)) {
-        if (c.h <= 250) return DARK.accentBg;
-        return hslHex(c.h, 32, 27);
+
+    if (role) {
+      if (role === 'blue') {
+        if (c.l < 0.3) return null;                     // тёмно-синие бары
+        if (c.l > 0.78) return p.accentSoft;            // бледная голубая заливка
+        return p.accent;                                // плотная синяя кнопка
       }
-      return hslHex(c.h, 34, 24);
+      return softOf(roleColor(c, true));                // цветная метка
     }
-    if (c.s > 0.18 && c.l >= 0.74) return hslHex(c.h, 26, 17);
-    if (c.l >= 0.97) return inline ? DARK.surface2 : DARK.surface;
-    if (c.l >= 0.9) return DARK.bg;
-    if (c.l > 0.62) return DARK.surface2;
+
+    if (c.l >= 0.97) return inline ? p.surface2 : p.surface;
+    if (c.l >= 0.88) return p.bg;
+    if (c.l > 0.55) return p.surface2;
     return null;
   }
 
@@ -166,49 +200,54 @@
   function mapBg(c, dark, inline) {
     if (!c) return null;
     if (c.a < 0.04) return null;
-    if (c.a < 0.4) {
-      if (!dark) return null;                           // на бумаге плёнки родные
-      // Полупрозрачные заливки: синие акценты и белые подсветки должны
-      // остаться видимыми на тёмном, тёмные — не мешать.
-      var base = mapBgSolid({ h: c.h, s: c.s, l: c.l, a: 1 }, true, inline);
-      if (c.s > 0.3 && base) return withAlpha(base, Math.max(c.a * 1.6, 0.16));
-      if (c.l > 0.62) return withAlpha('#ffffff', Math.min(0.2, Math.max(0.06, c.a * 1.3)));
-      if (c.l < 0.35) return withAlpha('#000000', Math.min(c.a, 0.6));
-      return base ? withAlpha(base, Math.max(c.a, 0.1)) : null;
+    if (c.a < 0.95) {
+      if (!dark) {
+        if (c.a < 0.4) return null;                     // на бумаге плёнки родные
+        var lb = mapBgSolid({ h: c.h, s: c.s, l: c.l, a: 1 }, false, inline);
+        return lb ? withAlpha(lb, Math.max(c.a, 0.35)) : null;
+      }
+      // Полупрозрачные заливки: цветная — мягкая подложка роли (soft()),
+      // светлая / тёмная — едва заметная плёнка из палитры.
+      var role = roleOf(c);
+      if (role === 'blue') return DARK.accentSoft;      // 0x2A8FB0D4
+      if (role) return softOf(roleColor(c, true));      // как soft() в приложении
+      if (c.l > 0.6) return withAlpha(DARK.ink, 0.06);
+      return fromDarkFilm(c);
     }
-    var solid = mapBgSolid({ h: c.h, s: c.s, l: c.l, a: 1 }, dark, inline);
-    if (solid && c.a < 0.95) return withAlpha(solid, Math.max(c.a, 0.35));
-    return solid;
+    return mapBgSolid({ h: c.h, s: c.s, l: c.l, a: 1 }, dark, inline);
+  }
+
+  function fromDarkFilm(c) {
+    if (c.l < 0.12) return null;                        // тёмная плёнка не нужна
+    return withAlpha(DARK.ink, Math.min(0.12, Math.max(0.04, c.l / 4)));
   }
 
   function mapFg(c, dark) {
-    if (!c) return null;
-    if (!dark) return null;
-    if (c.l > 0.66) return null;                        // уже светлый
+    if (!c || !dark) return null;
     var solid;
-    if (c.s > 0.3 && c.l < 0.66) solid = hslHex(c.h, 44, 78);
-    else if (c.l < 0.34) solid = DARK.ink;
-    else solid = DARK.muted;
+    var role = roleOf(c);
+    if (role) solid = roleColor(c, true);
+    else if (c.l < 0.34 || c.l >= 0.9) solid = DARK.ink;
+    else if (c.l < 0.7) solid = DARK.muted;
+    else return null;                                   // уже светлый
     return c.a < 0.95 ? withAlpha(solid, Math.max(c.a, 0.55)) : solid;
   }
 
   function mapBorder(c, dark) {
     if (!c || c.a < 0.15) return null;
-    var solid = null;
-    if (dark) {
-      if (c.l > 0.5) solid = DARK.line;
-      else if (c.l > 0.25) solid = '#2C2821';
-    } else if (c.l > 0.85) {
-      solid = LIGHT.line;
-    }
-    if (solid && c.a < 0.9) return withAlpha(solid, Math.max(c.a, 0.4));
-    return solid;
+    if (!dark) return c.l > 0.85 ? LIGHT.line : null;
+    var role = roleOf(c);
+    if (role) return withAlpha(roleColor(c, true), 0.55);
+    if (c.l < 0.2) return null;
+    return DARK.line;
   }
 
   function mapInk(c, dark) {
     if (!c || !dark) return null;
+    var role = roleOf(c);
+    if (role) return roleColor(c, true);
     if (c.l < 0.2) return DARK.ink;
-    if (c.l < 0.55) return hslHex(c.h, 24, 82);
+    if (c.l < 0.55) return DARK.muted;
     return null;
   }
 
@@ -218,52 +257,52 @@
   // включая те, что подгрузятся позже, сразу получают тёмные значения.
 
   var TOKENS = {
-    '-Background-Light': '#1E1C18',
+    '-Background-Light': '#201E1A',
     '-Border-Light': '#3E392F',
-    '-Background-Blue': '#2A4664',
-    '-Background-Blue-Light': '#34577D',
+    '-Background-Blue': '#8FB0D4',
+    '-Background-Blue-Light': '#8FB0D4',
     '-Color-Gray': '#A79D8B',
-    '-Color-Red': '#E3908C',
-    '-Color-Yellow': '#DFB57F',
-    '-Background-Dark': '#232331',
+    '-Color-Red': '#D9827A',
+    '-Color-Yellow': '#D6A960',
+    '-Background-Dark': '#201E1A',
     '-Color-Black': '#EAE3D5',
     '-Color-Neutrals': '#2A2721',
-    '-Color-Light': '#1E1C18',
-    '-Color-Violet': '#9C86E0',
-    '-Color-Hat': '#1E1C18',
+    '-Color-Light': '#201E1A',
+    '-Color-Violet': '#B79BC4',
+    '-Color-Hat': '#201E1A',
     '-BorderColor': '#3E392F',
-    '-UserRole-Gray': '#3E392F',
-    '-UserRole-Blue': '#34577D',
+    '-UserRole-Gray': '#8FB0D4',
+    '-UserRole-Blue': '#8FB0D4',
     '-UserBar-Active-Light': '#2A2721',
-    '-UserBar-Active-Blue': '#243447',
-    '-UserBar-Active-Dark': '#20232C',
-    '-UserBar-Active': 'rgba(255,255,255,0.08)',
+    '-UserBar-Active-Blue': '#201E1A',
+    '-UserBar-Active-Dark': '#171613',
+    '-UserBar-Active': 'rgba(143,176,212,0.165)',
     '-IconUser': '#A79D8B',
-    '-Push': '#E0713A',
-    '-MenuItem-Black': '#C9C0B0',
-    '-MenuItem-Gray': 'rgba(234,227,213,0.8)',
+    '-Push': '#D9827A',
+    '-MenuItem-Black': '#EAE3D5',
+    '-MenuItem-Gray': '#A79D8B',
     '-Notify-Icon-Black': '#A79D8B',
-    '-Button-Background-Light': 'rgba(143,176,212,0.18)',
-    '-Button-Background-Dark': 'rgba(255,255,255,0.12)',
-    '-Button-Background-Hover': '#34577D',
+    '-Button-Background-Light': 'rgba(143,176,212,0.165)',
+    '-Button-Background-Dark': 'rgba(143,176,212,0.165)',
+    '-Button-Background-Hover': '#8FB0D4',
     '-Button-Color': '#8FB0D4',
-    '-Mobile-Active-Menu': '#34577D',
-    '-Background-Blue-RGBA': 'rgba(143,176,212,0.12)',
+    '-Mobile-Active-Menu': '#8FB0D4',
+    '-Background-Blue-RGBA': 'rgba(143,176,212,0.165)',
     '-Box-Shadow': '0 4px 6px -2px rgba(0,0,0,0.25),0 10px 15px -3px rgba(0,0,0,0.35)'
   };
 
   var TOKEN_ALIASES = {
     '-Background': '#171613',
     '-Color': '#EAE3D5',
-    '-UserRole': '#34577D',
-    '-UserBar': '#243447',
-    '-UserBar-Active': 'rgba(255,255,255,0.08)',
-    '-MenuItem': 'rgba(234,227,213,0.8)',
+    '-UserRole': '#8FB0D4',
+    '-UserBar': '#201E1A',
+    '-UserBar-Active': 'rgba(143,176,212,0.165)',
+    '-MenuItem': '#EAE3D5',
     '-Notify-Icon': '#A79D8B',
-    '-Button-Background': 'rgba(143,176,212,0.18)',
+    '-Button-Background': 'rgba(143,176,212,0.165)',
     '-Button-Color': '#8FB0D4',
-    '-Button-Background-Hover': '#34577D',
-    '-Color-School': '#9C86E0'
+    '-Button-Background-Hover': '#8FB0D4',
+    '-Color-School': '#B79BC4'
   };
 
   function tokenCss() {
@@ -305,12 +344,12 @@
     'html:not(.sch-dark) a{color:#34577D !important;}',
     'html.sch-dark a{color:#8FB0D4 !important;}',
     'html:not(.sch-dark) ::selection{background:#D9CEB8;color:#2B2A26;}',
-    'html.sch-dark ::selection{background:#34577D;color:#F3EDE1;}',
+    'html.sch-dark ::selection{background:#8FB0D4;color:#171613;}',
     'html.sch-dark input,html.sch-dark textarea,html.sch-dark select{',
-    '  background:#1E1C18 !important;color:#EAE3D5 !important;',
+    '  background:#201E1A !important;color:#EAE3D5 !important;',
     '  border-color:#3E392F !important;}',
     'html.sch-dark input::placeholder,html.sch-dark textarea::placeholder{',
-    '  color:#7D7466 !important;}',
+    '  color:#A79D8B !important;}',
     'html.sch-dark ::-webkit-scrollbar{width:10px;height:10px;background:#171613;}',
     'html.sch-dark ::-webkit-scrollbar-thumb{background:#3E392F;border-radius:6px;}',
     'html.sch-dark ::-webkit-scrollbar-thumb:hover{background:#4A4438;}',
@@ -374,15 +413,27 @@
       if (dv) dark.push(prop + ':' + dv + ' !important');
     };
 
+    var darkBg = null;
     if (!rootSelector(sel)) {
       var bgRaw = style.getPropertyValue('background-color') ||
           shorthandColor(style.getPropertyValue('background'));
       var bg = parseColor(bgRaw);
-      if (bg) push('background-color', mapBg(bg, false, false), mapBg(bg, true, false));
+      if (bg) {
+        darkBg = mapBg(bg, true, false);
+        push('background-color', mapBg(bg, false, false), darkBg);
+      }
     }
 
+    var rawBg = style.getPropertyValue('background-color') ||
+        style.getPropertyValue('background');
     var fg = parseColor(style.getPropertyValue('color'));
     if (fg) push('color', mapFg(fg, false), mapFg(fg, true));
+    // На плотной акцентной заливке текст — ON_ACCENT приложения.
+    if (darkBg === DARK.accentBg ||
+        /var\(\s*--(?:MH|NC)-(?:UserRole|UserRole-Blue|UserRole-Gray|Background-Blue|Background-Blue-Light|Mobile-Active-Menu)\b/
+            .test(rawBg)) {
+      dark.push('color:' + DARK.onAccent + ' !important');
+    }
 
     var borderRaw = style.getPropertyValue('border-color') ||
         style.getPropertyValue('border-top-color') ||
@@ -581,13 +632,14 @@
     var tag = el.tagName.toUpperCase();
     var light = [], dark = [];
 
+    var dbg = null;
     var bg = parseColor(st.getPropertyValue('background-color') ||
         shorthandColor(st.getPropertyValue('background')));
     if (bg) {
       var lb = mapBg(bg, false, isInlineTag(tag));
-      var db = mapBg(bg, true, isInlineTag(tag));
+      dbg = mapBg(bg, true, isInlineTag(tag));
       if (lb) light.push('background-color:' + lb + ' !important');
-      if (db) dark.push('background-color:' + db + ' !important');
+      if (dbg) dark.push('background-color:' + dbg + ' !important');
     }
 
     var fg = parseColor(st.getPropertyValue('color'));
@@ -595,6 +647,7 @@
       var df = mapFg(fg, true);
       if (df) dark.push('color:' + df + ' !important');
     }
+    if (dbg === DARK.accentBg) dark.push('color:' + DARK.onAccent + ' !important');
 
     var border = parseColor(st.getPropertyValue('border-color') ||
         shorthandColor(st.getPropertyValue('border')) ||
