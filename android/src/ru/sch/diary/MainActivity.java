@@ -384,7 +384,11 @@ public final class MainActivity extends Activity {
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         appTitle = tvSerif("Дневник", 22, TEXT, true);
+        appTitle.setSingleLine(true);
+        appTitle.setEllipsize(TextUtils.TruncateAt.END);
         appSub = tv("", 11, MUTED, false);
+        appSub.setSingleLine(true);
+        appSub.setEllipsize(TextUtils.TruncateAt.END);
         titles.addView(appTitle);
         titles.addView(appSub);
         bar.addView(titles, new LinearLayout.LayoutParams(
@@ -462,6 +466,8 @@ public final class MainActivity extends Activity {
         TextView t = tvSans(label, 10, color, sel);
         t.setGravity(Gravity.CENTER);
         t.setPadding(0, dp(2), 0, 0);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
         item.addView(t);
 
         View underline = new View(this);
@@ -649,6 +655,8 @@ public final class MainActivity extends Activity {
 
         TextView month = tv(monthLabel(), 15, TEXT, true);
         month.setGravity(Gravity.CENTER);
+        month.setSingleLine(true);
+        month.setEllipsize(TextUtils.TruncateAt.END);
         month.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { pickDate(); }
         });
@@ -665,6 +673,7 @@ public final class MainActivity extends Activity {
 
         if (!currentDate.equals(today())) {
             TextView t = tv("Сегодня", 12, ACCENT, true);
+            t.setSingleLine(true);
             t.setPadding(dp(12), dp(7), dp(12), dp(7));
             t.setBackground(roundBg(ACCENT_SOFT, 20, 0));
             t.setClickable(true);
@@ -790,6 +799,8 @@ public final class MainActivity extends Activity {
         pill.addView(dot, dlp);
 
         TextView t = tv(text, 12, TEXT, false);
+        t.setMaxLines(2);
+        t.setEllipsize(TextUtils.TruncateAt.END);
         pill.addView(t);
 
         LinearLayout wrap = new LinearLayout(this);
@@ -852,12 +863,15 @@ public final class MainActivity extends Activity {
         timeCol.setPadding(0, dp(1), dp(6), 0);
         TextView begin = tv(Api.s(l, "begin"), 13, current ? ACCENT : TEXT, true);
         begin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        begin.setSingleLine(true);
         String endTime = Api.s(l, "end");
         TextView end = tv(endTime.isEmpty() ? "" : "до " + endTime, 9, MUTED, false);
         end.setTypeface(Typeface.MONOSPACE);
+        end.setSingleLine(true);
         timeCol.addView(begin);
         timeCol.addView(end);
-        card.addView(timeCol, new LinearLayout.LayoutParams(dp(64),
+        card.addView(timeCol, new LinearLayout.LayoutParams(
+                Math.max(dp(64), textColWidth(begin, end)),
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout body = new LinearLayout(this);
@@ -872,14 +886,16 @@ public final class MainActivity extends Activity {
         head.addView(subject, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        JSONArray marks = l.optJSONArray("marks");
-        if (marks != null) {
-            for (int i = 0; i < marks.length(); i++) {
-                String v = Api.str(marks.opt(i));
-                if (!v.isEmpty()) head.addView(markChip(v));
-            }
+        java.util.List<View> chips = markChips(l.optJSONArray("marks"));
+        if (tight() && !chips.isEmpty()) {
+            body.addView(head);
+            LinearLayout flow = chipFlow(chips);
+            flow.setPadding(0, dp(4), 0, 0);
+            body.addView(flow);
+        } else {
+            for (int i = 0; i < chips.size(); i++) head.addView(chips.get(i));
+            body.addView(head);
         }
-        body.addView(head);
 
         String topic = Api.s(l, "topic").trim();
         if (!topic.isEmpty() && !topic.equalsIgnoreCase(subjectOf(l))) {
@@ -948,12 +964,15 @@ public final class MainActivity extends Activity {
         timeCol.setOrientation(LinearLayout.VERTICAL);
         TextView begin = tv(Api.s(l, "begin"), 12, TEXT, true);
         begin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        begin.setSingleLine(true);
         String endTime = Api.s(l, "end");
         TextView end = tv(endTime.isEmpty() ? "" : "до " + endTime, 9, MUTED, false);
         end.setTypeface(Typeface.MONOSPACE);
+        end.setSingleLine(true);
         timeCol.addView(begin);
         timeCol.addView(end);
-        card.addView(timeCol, new LinearLayout.LayoutParams(dp(64),
+        card.addView(timeCol, new LinearLayout.LayoutParams(
+                Math.max(dp(64), textColWidth(begin, end)),
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout body = new LinearLayout(this);
@@ -1098,20 +1117,14 @@ public final class MainActivity extends Activity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout views = new LinearLayout(this);
-        views.setOrientation(LinearLayout.HORIZONTAL);
-        views.setPadding(dp(14), dp(4), dp(14), dp(4));
+        LinearLayout views = chipStrip(page);
         views.addView(hwViewChip("Актуальные", false));
         views.addView(hwViewChip("Прошедшие", true));
-        page.addView(views);
 
-        LinearLayout periods = new LinearLayout(this);
-        periods.setOrientation(LinearLayout.HORIZONTAL);
-        periods.setPadding(dp(14), dp(0), dp(14), dp(8));
+        LinearLayout periods = chipStrip(page);
         periods.addView(hwPeriodChip("7 дней", 7));
         periods.addView(hwPeriodChip("14 дней", 14));
         periods.addView(hwPeriodChip("30 дней", 30));
-        page.addView(periods);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -1148,6 +1161,7 @@ public final class MainActivity extends Activity {
         t.setPadding(dp(16), dp(8), dp(16), dp(8));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
                 : roundBg(SURFACE, 3, STROKE));
+        tappableChip(t);
         t.setClickable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1176,6 +1190,7 @@ public final class MainActivity extends Activity {
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
                 : roundBg(SURFACE, 3, STROKE));
+        tappableChip(t);
         t.setClickable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1329,21 +1344,15 @@ public final class MainActivity extends Activity {
             fetchRating(false);
         }
 
-        LinearLayout views = new LinearLayout(this);
-        views.setOrientation(LinearLayout.HORIZONTAL);
-        views.setPadding(dp(14), dp(4), dp(14), dp(6));
+        LinearLayout views = chipStrip(page);
         views.addView(viewChip("Оценки", 0));
         views.addView(viewChip("По предметам", 2));
         views.addView(viewChip("Рейтинг", 1));
-        page.addView(views);
 
         if (marksView == 0) {
-            LinearLayout periods = new LinearLayout(this);
-            periods.setOrientation(LinearLayout.HORIZONTAL);
-            periods.setPadding(dp(14), dp(0), dp(14), dp(8));
+            LinearLayout periods = chipStrip(page);
             periods.addView(periodChip("14 дней", 14));
             periods.addView(periodChip("30 дней", 30));
-            page.addView(periods);
         }
 
         ScrollView scroll = new ScrollView(this);
@@ -1410,6 +1419,7 @@ public final class MainActivity extends Activity {
         t.setPadding(dp(16), dp(8), dp(16), dp(8));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
                 : roundBg(SURFACE, 3, STROKE));
+        tappableChip(t);
         t.setClickable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1433,6 +1443,7 @@ public final class MainActivity extends Activity {
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
         t.setBackground(sel ? roundBg(ACCENT, 3, 0)
                 : roundBg(SURFACE, 3, STROKE));
+        tappableChip(t);
         t.setClickable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1917,23 +1928,25 @@ public final class MainActivity extends Activity {
         LinearLayout avgBox = new LinearLayout(this);
         avgBox.setOrientation(LinearLayout.VERTICAL);
         TextView avgT = tv(String.format(Locale.US, "%.1f", avg), 30, avgColor, true);
+        avgT.setSingleLine(true);
         TextView avgL = tv("средний балл", 10, MUTED, false);
+        avgL.setSingleLine(true);
         avgBox.addView(avgT);
         avgBox.addView(avgL);
-        card.addView(avgBox, new LinearLayout.LayoutParams(dp(96),
+        card.addView(avgBox, new LinearLayout.LayoutParams(
+                Math.max(dp(96), textColWidth(avgT, avgL)),
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout counts = new LinearLayout(this);
         counts.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        if (count5 > 0) row1.addView(countTag("5", count5, GREEN));
-        if (count4 > 0) row1.addView(countTag("4", count4, MARK4));
-        if (count3 > 0) row1.addView(countTag("3", count3, AMBER));
-        if (count2 > 0) row1.addView(countTag("2", count2, RED));
-        if (other > 0) row1.addView(countTag("·", other, MUTED));
-        counts.addView(row1);
+        java.util.List<View> tags = new java.util.ArrayList<>();
+        if (count5 > 0) tags.add(countTag("5", count5, GREEN));
+        if (count4 > 0) tags.add(countTag("4", count4, MARK4));
+        if (count3 > 0) tags.add(countTag("3", count3, AMBER));
+        if (count2 > 0) tags.add(countTag("2", count2, RED));
+        if (other > 0) tags.add(countTag("·", other, MUTED));
+        counts.addView(chipFlow(tags));
 
         TextView total = tv(items.length() + " " + plural(items.length(),
                 "оценка", "оценки", "оценок") + " за " + marksDays + " дней",
@@ -3089,22 +3102,22 @@ public final class MainActivity extends Activity {
                 + "добавьте приложение в его список (split tunneling) и выберите "
                 + "российский сервер.", 11, MUTED, false));
 
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        buttons.setPadding(0, dp(14), 0, 0);
-        buttons.addView(secondaryButton("Проверить снова", new Runnable() {
+        TextView again = secondaryButton("Проверить снова", new Runnable() {
             @Override public void run() { checkNetwork(status); }
-        }), new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp.leftMargin = dp(8);
-        buttons.addView(primaryButton("Закрыть", new Runnable() {
+        });
+        TextView close = primaryButton("Закрыть", new Runnable() {
             @Override public void run() { d.dismiss(); }
-        }), lp);
+        });
+        View buttons = buttonPair(again, close);
+        buttons.setPadding(0, dp(14), 0, 0);
         root.addView(buttons);
 
-        d.setContentView(root);
+        // На маленьком экране с крупным шрифтом диалог иначе не помещается
+        // по высоте и кнопки уезжают за край.
+        ScrollView dialogScroll = new ScrollView(this);
+        dialogScroll.setFillViewport(true);
+        dialogScroll.addView(root);
+        d.setContentView(dialogScroll);
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new ColorDrawable(BG));
@@ -3490,6 +3503,9 @@ public final class MainActivity extends Activity {
 
         TextView title = tvSerif(weekRangeLabel(start), 17, TEXT, true);
         title.setGravity(Gravity.CENTER);
+        title.setMaxLines(tight() ? 2 : 1);
+        title.setSingleLine(!tight());
+        title.setEllipsize(TextUtils.TruncateAt.END);
         row.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -3944,7 +3960,9 @@ public final class MainActivity extends Activity {
 
         TextView time = tv(Api.s(l, "begin"), 11, MUTED, false);
         time.setTypeface(Typeface.MONOSPACE);
-        row.addView(time, new LinearLayout.LayoutParams(dp(42),
+        time.setSingleLine(true);
+        row.addView(time, new LinearLayout.LayoutParams(
+                Math.max(dp(42), textColWidth(time)),
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout body = new LinearLayout(this);
@@ -3968,12 +3986,13 @@ public final class MainActivity extends Activity {
         row.addView(body, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        JSONArray marks = l.optJSONArray("marks");
-        if (marks != null) {
-            for (int i = 0; i < marks.length(); i++) {
-                String v = Api.str(marks.opt(i));
-                if (!v.isEmpty()) row.addView(markChip(v));
-            }
+        java.util.List<View> chips = markChips(l.optJSONArray("marks"));
+        if (!chips.isEmpty() && tight()) {
+            LinearLayout flow = chipFlow(chips);
+            flow.setPadding(0, dp(2), 0, 0);
+            body.addView(flow);
+        } else {
+            for (int i = 0; i < chips.size(); i++) row.addView(chips.get(i));
         }
         return row;
     }
@@ -4254,9 +4273,15 @@ public final class MainActivity extends Activity {
 
         TextView badge = tv(String.valueOf(place), 13, place == 1 ? ON_ACCENT : TEXT, true);
         badge.setGravity(Gravity.CENTER);
+        badge.setSingleLine(true);
+        badge.setMinWidth(dp(34));
+        badge.setMinHeight(dp(34));
+        badge.setPadding(dp(5), dp(4), dp(5), dp(4));
         badge.setBackground(roundBg(place == 1 ? GREEN : SURFACE2, 3,
                 place == 1 ? 0 : STROKE));
-        top.addView(badge, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        top.addView(badge, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -6931,6 +6956,137 @@ public final class MainActivity extends Activity {
         return iv;
     }
 
+    // Экран узкий или шрифт увеличен — горизонтальные пары кнопок
+    // в таких условиях превращаются в кашу из переносов.
+    private boolean tight() {
+        Configuration c = getResources().getConfiguration();
+        return c.fontScale >= 1.3f || (c.screenWidthDp > 0 && c.screenWidthDp < 340);
+    }
+
+    private float textWidth(View v) {
+        if (!(v instanceof TextView)) return 0f;
+        TextView t = (TextView) v;
+        CharSequence cs = t.getText();
+        if (cs == null) return 0f;
+        return t.getPaint().measureText(cs.toString())
+                + t.getPaddingLeft() + t.getPaddingRight();
+    }
+
+    // Помещаются ли две кнопки в одну строку с учётом реальной ширины
+    // текста и поля экрана, а не «на глаз».
+    private boolean fitsSideBySide(View a, View b) {
+        if (tight()) return false;
+        int avail = getResources().getDisplayMetrics().widthPixels
+                - dp(40) - dp(8);                 // поля диалога + зазор
+        return textWidth(a) + textWidth(b) + dp(28) <= avail;
+    }
+
+    private View buttonPair(View a, View b) {
+        LinearLayout row = new LinearLayout(this);
+        boolean stack = !fitsSideBySide(a, b);
+        row.setOrientation(stack ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        if (stack) {
+            row.addView(a, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = dp(8);
+            row.addView(b, lp);
+        } else {
+            row.addView(a, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            lp.leftMargin = dp(8);
+            row.addView(b, lp);
+        }
+        return row;
+    }
+
+    // Ширина колонки под текст: фиксированные dp обрезают «08:30», когда
+    // шрифт в системе увеличен.
+    private int textColWidth(TextView... views) {
+        float max = 0f;
+        for (TextView v : views) max = Math.max(max, textWidth(v));
+        return Math.max(dp(42), (int) Math.ceil(max) + dp(8));
+    }
+
+    // Раскладка чипов «сколько влезет в строку»: ряд из пяти оценок на
+    // крупном шрифте иначе вылезал за экран и обрезался справа.
+    private LinearLayout chipFlow(final java.util.List<View> items) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        if (items.isEmpty()) return col;
+        int avail = getResources().getDisplayMetrics().widthPixels - dp(40);
+        LinearLayout row = null;
+        int used = 0;
+        for (int i = 0; i < items.size(); i++) {
+            View v = items.get(i);
+            v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int extra = 0;
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            if (lp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams mp = (ViewGroup.MarginLayoutParams) lp;
+                extra = mp.leftMargin + mp.rightMargin;
+            }
+            int w = v.getMeasuredWidth() + extra;
+            if (row == null || (used > 0 && used + w > avail)) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                if (col.getChildCount() > 0) rlp.topMargin = dp(4);
+                col.addView(row, rlp);
+                used = 0;
+            }
+            row.addView(v);
+            used += w;
+        }
+        return col;
+    }
+
+    // Собирает оценки урока в чипы; на узком экране они уходят под тему,
+    // а не выжимают её в ноль.
+    private java.util.List<View> markChips(JSONArray marks) {
+        java.util.List<View> out = new java.util.ArrayList<>();
+        if (marks == null) return out;
+        for (int i = 0; i < marks.length(); i++) {
+            String v = Api.str(marks.opt(i));
+            if (!v.isEmpty()) out.add(markChip(v));
+        }
+        return out;
+    }
+
+    // Полоса чипов: на узком экране она прокручивается, а не обрезается.
+    private LinearLayout chipStrip(LinearLayout page) {
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setClipToPadding(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(14), dp(4), dp(14), dp(8));
+        hs.addView(row, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        page.addView(hs, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        return row;
+    }
+
+    private TextView tappableChip(TextView t) {
+        t.setSingleLine(true);
+        t.setMaxLines(1);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        t.setMinHeight(dp(40));
+        t.setGravity(Gravity.CENTER);
+        return t;
+    }
+
     private LinearLayout card(int color) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
@@ -6982,11 +7138,14 @@ public final class MainActivity extends Activity {
 
         TextView t = tvHand(value, 22, fg);
         t.setGravity(Gravity.CENTER);
+        t.setSingleLine(true);
         t.setMinWidth(dp(30));
-        t.setPadding(dp(5), 0, dp(5), dp(1));
+        t.setMinHeight(dp(32));
+        t.setPadding(dp(5), dp(3), dp(5), dp(3));
         t.setBackground(roundBg(0x00000000, 2, STROKE));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(32));
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.leftMargin = dp(4);
         t.setLayoutParams(lp);
         return t;
@@ -7014,6 +7173,9 @@ public final class MainActivity extends Activity {
     private TextView primaryButton(String label, final Runnable action) {
         TextView t = tv(label, 14, ON_ACCENT, true);
         t.setGravity(Gravity.CENTER);
+        t.setMinHeight(dp(44));
+        t.setMaxLines(2);
+        t.setEllipsize(TextUtils.TruncateAt.END);
         t.setPadding(dp(16), dp(12), dp(16), dp(12));
         t.setBackground(roundBg(ACCENT, 3, 0));
         t.setClickable(true);
@@ -7026,6 +7188,9 @@ public final class MainActivity extends Activity {
     private TextView secondaryButton(String label, final Runnable action) {
         TextView t = tv(label, 14, ACCENT, true);
         t.setGravity(Gravity.CENTER);
+        t.setMinHeight(dp(44));
+        t.setMaxLines(2);
+        t.setEllipsize(TextUtils.TruncateAt.END);
         t.setPadding(dp(16), dp(11), dp(16), dp(11));
         t.setBackground(roundBg(0x00000000, 3, ACCENT));
         t.setClickable(true);
