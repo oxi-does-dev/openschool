@@ -222,6 +222,45 @@
     return withAlpha(DARK.ink, Math.min(0.12, Math.max(0.04, c.l / 4)));
   }
 
+  var COLOR_TOKEN = new RegExp(
+      '#[0-9a-fA-F]{3,8}\\b|rgba?\\([^)]*\\)|\\b(?:' +
+      Object.keys(NAMES).join('|') + ')\\b', 'gi');
+
+  // Градиенты — половина фирменных плашек МЭШ. Сводим каждый стоп к роли
+  // палитры и оставляем полупрозрачной плёнкой: форма градиента сохраняется,
+  // но цвет больше не выпадает из темы.
+  function tokenTint(name) {
+    if (/violet|school|purple/i.test(name)) return withAlpha(DARK.violet, 0.24);
+    if (/red|danger|error/i.test(name)) return withAlpha(DARK.red, 0.22);
+    if (/green|success/i.test(name)) return withAlpha(DARK.green, 0.22);
+    if (/yellow|amber|warning/i.test(name)) return withAlpha(DARK.amber, 0.22);
+    if (/blue|userrole|button|mobile|push|avatar/i.test(name)) {
+      return withAlpha(DARK.accent, 0.26);
+    }
+    if (/background|light|neutrals|black|hat|icon/i.test(name)) {
+      return withAlpha(DARK.ink, 0.07);
+    }
+    return null;
+  }
+
+  function mapGradient(value, dark) {
+    if (!dark || !/gradient\(/i.test(value)) return null;
+    value = value.replace(
+        /var\(\s*--(?:MH|NC)-([A-Za-z0-9-]+)\s*\)/gi,
+        function (m, name) { return tokenTint(name) || m; });
+    return value.replace(COLOR_TOKEN, function (tok) {
+      var c = parseColor(tok);
+      if (!c || c.a < 0.15) return tok;
+      var role = roleOf(c);
+      if (role) {
+        var a = role === 'blue' ? 0.28 : 0.24;
+        return withAlpha(roleColor(c, true), a);
+      }
+      if (c.l > 0.6) return withAlpha(DARK.ink, 0.07);
+      return withAlpha(DARK.bg, 0.35);
+    });
+  }
+
   function mapFg(c, dark) {
     if (!c || !dark) return null;
     var solid;
@@ -354,6 +393,15 @@
     'html.sch-dark ::-webkit-scrollbar-thumb{background:#3E392F;border-radius:6px;}',
     'html.sch-dark ::-webkit-scrollbar-thumb:hover{background:#4A4438;}',
     'html.sch-dark ::-webkit-scrollbar-corner{background:#171613;}',
+    // Тёмный логотип МЭШ на тёмной шапке не видно — просто убираем его.
+    // Только в шапке: логотипы школ и картинки в заданиях не трогаем.
+    'html.sch-dark header img[src*="logo" i],',
+    'html.sch-dark header [class*="logo" i],',
+    'html.sch-dark [class*="hat" i] img[src*="logo" i],',
+    'html.sch-dark [class*="hat" i] [class*="logo" i],',
+    'html.sch-dark [class*="userbar" i] img[src*="logo" i],',
+    'html.sch-dark [class*="userbar" i] [class*="logo" i]{',
+    '  display:none !important;}',
     // монохромные SVG-иконки: заливка чёрным по атрибуту
     'html.sch-dark svg [fill="#000"],html.sch-dark svg [fill="#000000"],',
     'html.sch-dark svg [fill="#212529"],html.sch-dark svg [fill="black"]{',
@@ -426,6 +474,9 @@
 
     var rawBg = style.getPropertyValue('background-color') ||
         style.getPropertyValue('background');
+    var rawImg = style.getPropertyValue('background-image');
+    var grad = mapGradient(rawImg, true);
+    if (grad) dark.push('background-image:' + grad + ' !important');
     var fg = parseColor(style.getPropertyValue('color'));
     if (fg) push('color', mapFg(fg, false), mapFg(fg, true));
     // На плотной акцентной заливке текст — ON_ACCENT приложения.
@@ -619,7 +670,8 @@
     for (var i = 0; i < style.length; i++) {
       var p = style[i];
       if (p === 'color' || p === 'background' || p === 'background-color' ||
-          p === 'fill' || p === 'stroke' || p.indexOf('border') === 0) return true;
+          p === 'background-image' || p === 'fill' || p === 'stroke' ||
+          p.indexOf('border') === 0) return true;
     }
     return false;
   }
@@ -641,6 +693,10 @@
       if (lb) light.push('background-color:' + lb + ' !important');
       if (dbg) dark.push('background-color:' + dbg + ' !important');
     }
+
+    var bgImg = st.getPropertyValue('background-image');
+    var dgrad = mapGradient(bgImg, true);
+    if (dgrad) dark.push('background-image:' + dgrad + ' !important');
 
     var fg = parseColor(st.getPropertyValue('color'));
     if (fg) {
