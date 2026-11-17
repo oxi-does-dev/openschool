@@ -5861,6 +5861,10 @@ public final class MainActivity extends Activity {
                 android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
         progress.setProgress(0);
+        progress.setProgressTintList(
+                android.content.res.ColorStateList.valueOf(ACCENT));
+        progress.setProgressBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(DIVIDER));
         root.addView(progress, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
 
@@ -5880,6 +5884,36 @@ public final class MainActivity extends Activity {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
 
         web.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
+
+        // Своя заставка вместо «внутренней» загрузки ЦДЗ: та появляется
+        // белой полосой в верхней части экрана, пока сайт не докрасился.
+        final LinearLayout loading = new LinearLayout(this);
+        loading.setOrientation(LinearLayout.VERTICAL);
+        loading.setGravity(Gravity.CENTER);
+        loading.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
+
+        final ProgressBar spinner = new ProgressBar(this);
+        spinner.setIndeterminateTintList(
+                android.content.res.ColorStateList.valueOf(ACCENT));
+        LinearLayout.LayoutParams spinnerLp =
+                new LinearLayout.LayoutParams(dp(34), dp(34));
+        spinnerLp.bottomMargin = dp(16);
+        loading.addView(spinner, spinnerLp);
+
+        final TextView loadingText = tv("Открываю задание…", 14, MUTED, false);
+        loadingText.setGravity(Gravity.CENTER);
+        loading.addView(loadingText);
+
+        final FrameLayout stage = new FrameLayout(this);
+        stage.addView(web, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        stage.addView(loading, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(stage, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
         themeBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 cdzDark = !cdzDark;
@@ -5889,6 +5923,7 @@ public final class MainActivity extends Activity {
                 themeBtn.setContentDescription(
                         cdzDark ? "Светлая тема" : "Тёмная тема");
                 web.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
+                loading.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
                 web.evaluateJavascript("window.__schPaper&&window.__schPaper.set("
                         + cdzDark + ")", null);
             }
@@ -5938,8 +5973,14 @@ public final class MainActivity extends Activity {
             public void onPageStarted(WebView view, String u, android.graphics.Bitmap icon) {
                 super.onPageStarted(view, u, icon);
                 // Прячем страницу до покраски: иначе видно, как светлая
-                // версия переключается в тёмную.
+                // версия переключается в тёмную, и мелькает загрузчик сайта.
                 view.setAlpha(0f);
+                spinner.setVisibility(View.VISIBLE);
+                loadingText.setVisibility(View.VISIBLE);
+                loadingText.setText("Открываю задание…");
+                loading.animate().cancel();
+                loading.setAlpha(1f);
+                loading.setVisibility(View.VISIBLE);
             }
 
             @Override
@@ -5952,9 +5993,24 @@ public final class MainActivity extends Activity {
                 }
                 view.postDelayed(new Runnable() {
                     @Override public void run() {
-                        view.animate().alpha(1f).setDuration(160).start();
+                        view.animate().alpha(1f).setDuration(200).start();
+                        loading.animate().alpha(0f).setDuration(160)
+                                .withEndAction(new Runnable() {
+                                    @Override public void run() {
+                                        loading.setVisibility(View.GONE);
+                                    }
+                                }).start();
                     }
                 }, 180);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int code, String desc,
+                    String failingUrl) {
+                super.onReceivedError(view, code, desc, failingUrl);
+                spinner.setVisibility(View.GONE);
+                loadingText.setText("Не удалось открыть задание");
+                view.setAlpha(1f);
             }
 
             @Override
@@ -5986,16 +6042,16 @@ public final class MainActivity extends Activity {
         });
 
         web.loadUrl(url);
-        root.addView(web, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         d.setContentView(root);
         Window w = d.getWindow();
         if (w != null) {
-            w.setBackgroundDrawable(new ColorDrawable(BG));
+            w.setBackgroundDrawable(new ColorDrawable(cdzDark ? 0xFF171613 : BG));
             w.setDimAmount(0.6f);
+            // Во весь экран: при высоте 97 % сверху оставалась полоска
+            // предыдущего экрана, из-за которой окно выглядело кривым.
             w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
-                    (int) (getResources().getDisplayMetrics().heightPixels * 0.97f));
+                    ViewGroup.LayoutParams.MATCH_PARENT);
             w.setGravity(Gravity.BOTTOM);
         }
         d.setOnDismissListener(new DialogInterface.OnDismissListener() {

@@ -110,7 +110,7 @@
     }).join('');
   }
 
-  function isBlue(c) { return c.h >= 195 && c.h <= 300; }
+  function isAccentHue(c) { return c.h >= 195 && c.h <= 335; }
 
   function isInlineTag(tag) {
     return tag === 'SPAN' || tag === 'A' || tag === 'CODE' || tag === 'MARK' ||
@@ -121,14 +121,24 @@
 
   // --- что во что превращается ----------------------------------------------
 
-  // Фон. inline — плашка внутри текста, ей нужен второй уровень поверхности.
-  function mapBg(c, dark, inline) {
-    if (!c || c.a < 0.4) return null;
+  // Полупрозрачные цвета: сохраняем альфу, иначе исчезнут плёнки и тени.
+  function withAlpha(color, a) {
+    var c = parseColor(color);
+    if (!c) return color;
+    var hex = hslHex(c.h, c.s * 100, c.l * 100);
+    var r = parseInt(hex.substr(1, 2), 16);
+    var g = parseInt(hex.substr(3, 2), 16);
+    var b = parseInt(hex.substr(5, 2), 16);
+    a = Math.max(0, Math.min(1, a));
+    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + Math.round(a * 100) / 100 + ')';
+  }
+
+  function mapBgSolid(c, dark, inline) {
     if (!dark) {
       // Цветные плашки в светлой теме не трогаем — они и так родные.
       if (c.s > 0.15) {
-        if (c.s > 0.25 && c.l > 0.2 && c.l < 0.8 && isBlue(c)) return LIGHT.accentBg;
-        if (c.s > 0.12 && c.l > 0.85 && c.l <= 0.97 && isBlue(c)) return LIGHT.soft;
+        if (c.s > 0.25 && c.l > 0.2 && c.l < 0.8 && isAccentHue(c)) return LIGHT.accentBg;
+        if (c.s > 0.12 && c.l > 0.85 && c.l <= 0.97 && isAccentHue(c)) return LIGHT.soft;
         return null;
       }
       if (c.l >= 0.97) return LIGHT.surface;
@@ -137,7 +147,13 @@
     }
     if (c.l < 0.14) return null;                        // уже тёмный
     if (c.s > 0.26 && c.l > 0.16 && c.l < 0.74) {
-      return isBlue(c) ? DARK.accentBg : hslHex(c.h, 34, 24);
+      // Синий остаётся синим, фиолетовый бренд — фиолетовым, остальные
+      // цветные плашки просто приглушаются, сохраняя свой оттенок.
+      if (isAccentHue(c)) {
+        if (c.h <= 250) return DARK.accentBg;
+        return hslHex(c.h, 32, 27);
+      }
+      return hslHex(c.h, 34, 24);
     }
     if (c.s > 0.18 && c.l >= 0.74) return hslHex(c.h, 26, 17);
     if (c.l >= 0.97) return inline ? DARK.surface2 : DARK.surface;
@@ -146,24 +162,47 @@
     return null;
   }
 
+  // Фон. inline — плашка внутри текста, ей нужен второй уровень поверхности.
+  function mapBg(c, dark, inline) {
+    if (!c) return null;
+    if (c.a < 0.04) return null;
+    if (c.a < 0.4) {
+      if (!dark) return null;                           // на бумаге плёнки родные
+      // Полупрозрачные заливки: синие акценты и белые подсветки должны
+      // остаться видимыми на тёмном, тёмные — не мешать.
+      var base = mapBgSolid({ h: c.h, s: c.s, l: c.l, a: 1 }, true, inline);
+      if (c.s > 0.3 && base) return withAlpha(base, Math.max(c.a * 1.6, 0.16));
+      if (c.l > 0.62) return withAlpha('#ffffff', Math.min(0.2, Math.max(0.06, c.a * 1.3)));
+      if (c.l < 0.35) return withAlpha('#000000', Math.min(c.a, 0.6));
+      return base ? withAlpha(base, Math.max(c.a, 0.1)) : null;
+    }
+    var solid = mapBgSolid({ h: c.h, s: c.s, l: c.l, a: 1 }, dark, inline);
+    if (solid && c.a < 0.95) return withAlpha(solid, Math.max(c.a, 0.35));
+    return solid;
+  }
+
   function mapFg(c, dark) {
     if (!c) return null;
     if (!dark) return null;
     if (c.l > 0.66) return null;                        // уже светлый
-    if (c.s > 0.3 && c.l < 0.66) return hslHex(c.h, 58, 76);
-    if (c.l < 0.34) return DARK.ink;
-    return DARK.muted;
+    var solid;
+    if (c.s > 0.3 && c.l < 0.66) solid = hslHex(c.h, 44, 78);
+    else if (c.l < 0.34) solid = DARK.ink;
+    else solid = DARK.muted;
+    return c.a < 0.95 ? withAlpha(solid, Math.max(c.a, 0.55)) : solid;
   }
 
   function mapBorder(c, dark) {
     if (!c || c.a < 0.15) return null;
+    var solid = null;
     if (dark) {
-      if (c.l > 0.5) return DARK.line;
-      if (c.l > 0.25) return '#2C2821';
-      return null;
+      if (c.l > 0.5) solid = DARK.line;
+      else if (c.l > 0.25) solid = '#2C2821';
+    } else if (c.l > 0.85) {
+      solid = LIGHT.line;
     }
-    if (c.l > 0.85) return LIGHT.line;
-    return null;
+    if (solid && c.a < 0.9) return withAlpha(solid, Math.max(c.a, 0.4));
+    return solid;
   }
 
   function mapInk(c, dark) {
@@ -171,6 +210,74 @@
     if (c.l < 0.2) return DARK.ink;
     if (c.l < 0.55) return hslHex(c.h, 24, 82);
     return null;
+  }
+
+  // --- токены дизайн-системы МЭШ -------------------------------------------
+  // ЦДЗ (uchebnik.mos.ru) собран на CSS-переменных --MH-* / --NC-*.
+  // Оверрайдим их разом, а не отдельные элементы: тогда любые компоненты,
+  // включая те, что подгрузятся позже, сразу получают тёмные значения.
+
+  var TOKENS = {
+    '-Background-Light': '#1E1C18',
+    '-Border-Light': '#3E392F',
+    '-Background-Blue': '#2A4664',
+    '-Background-Blue-Light': '#34577D',
+    '-Color-Gray': '#A79D8B',
+    '-Color-Red': '#E3908C',
+    '-Color-Yellow': '#DFB57F',
+    '-Background-Dark': '#232331',
+    '-Color-Black': '#EAE3D5',
+    '-Color-Neutrals': '#2A2721',
+    '-Color-Light': '#1E1C18',
+    '-Color-Violet': '#9C86E0',
+    '-Color-Hat': '#1E1C18',
+    '-BorderColor': '#3E392F',
+    '-UserRole-Gray': '#3E392F',
+    '-UserRole-Blue': '#34577D',
+    '-UserBar-Active-Light': '#2A2721',
+    '-UserBar-Active-Blue': '#243447',
+    '-UserBar-Active-Dark': '#20232C',
+    '-UserBar-Active': 'rgba(255,255,255,0.08)',
+    '-IconUser': '#A79D8B',
+    '-Push': '#E0713A',
+    '-MenuItem-Black': '#C9C0B0',
+    '-MenuItem-Gray': 'rgba(234,227,213,0.8)',
+    '-Notify-Icon-Black': '#A79D8B',
+    '-Button-Background-Light': 'rgba(143,176,212,0.18)',
+    '-Button-Background-Dark': 'rgba(255,255,255,0.12)',
+    '-Button-Background-Hover': '#34577D',
+    '-Button-Color': '#8FB0D4',
+    '-Mobile-Active-Menu': '#34577D',
+    '-Background-Blue-RGBA': 'rgba(143,176,212,0.12)',
+    '-Box-Shadow': '0 4px 6px -2px rgba(0,0,0,0.25),0 10px 15px -3px rgba(0,0,0,0.35)'
+  };
+
+  var TOKEN_ALIASES = {
+    '-Background': '#171613',
+    '-Color': '#EAE3D5',
+    '-UserRole': '#34577D',
+    '-UserBar': '#243447',
+    '-UserBar-Active': 'rgba(255,255,255,0.08)',
+    '-MenuItem': 'rgba(234,227,213,0.8)',
+    '-Notify-Icon': '#A79D8B',
+    '-Button-Background': 'rgba(143,176,212,0.18)',
+    '-Button-Color': '#8FB0D4',
+    '-Button-Background-Hover': '#34577D',
+    '-Color-School': '#9C86E0'
+  };
+
+  function tokenCss() {
+    var decls = [];
+    var prefixes = ['--MH', '--NC'];
+    for (var p = 0; p < prefixes.length; p++) {
+      for (var k in TOKENS) {
+        if (TOKENS.hasOwnProperty(k)) decls.push(prefixes[p] + k + ':' + TOKENS[k]);
+      }
+      for (var a in TOKEN_ALIASES) {
+        if (TOKEN_ALIASES.hasOwnProperty(a)) decls.push(prefixes[p] + a + ':' + TOKEN_ALIASES[a]);
+      }
+    }
+    return 'html.sch-dark{' + decls.join('!important;') + '!important;}';
   }
 
   // --- статическая база (обе темы в одном листе, переключение — класс) ------
@@ -182,9 +289,17 @@
     '  background-image:none !important;color:#2B2A26 !important;}',
     'html.sch-dark body{background:#171613 !important;',
     '  background-image:none !important;color:#EAE3D5 !important;}',
-    'body{font-family:"PT Serif",Georgia,"Times New Roman",serif !important;}',
-    'h1,h2,h3,h4,h5,h6{font-family:"PT Serif",Georgia,serif !important;}',
-    'button,input,select,textarea{font-family:"Golos Text",Arial,sans-serif !important;',
+    // Светлая тема — книжная, с засечками. Тёмная — чистая типографика
+    // без засечек: на тёмном фоне они выглядят грязно.
+    'html:not(.sch-dark) body{font-family:"PT Serif",Georgia,"Times New Roman",serif !important;}',
+    'html:not(.sch-dark) h1,html:not(.sch-dark) h2,html:not(.sch-dark) h3,',
+    'html:not(.sch-dark) h4,html:not(.sch-dark) h5,html:not(.sch-dark) h6{',
+    '  font-family:"PT Serif",Georgia,serif !important;}',
+    'html.sch-dark body,html.sch-dark h1,html.sch-dark h2,html.sch-dark h3,',
+    'html.sch-dark h4,html.sch-dark h5,html.sch-dark h6{',
+    '  font-family:"Golos Text",Roboto,"Helvetica Neue",Arial,sans-serif !important;',
+    '  -webkit-font-smoothing:antialiased;}',
+    'button,input,select,textarea{font-family:"Golos Text",Roboto,Arial,sans-serif !important;',
     '  border-radius:3px !important;}',
     'button,[role="button"]{border-radius:3px !important;}',
     'html:not(.sch-dark) a{color:#34577D !important;}',
@@ -207,7 +322,7 @@
     'html.sch-dark svg [stroke="#000"],html.sch-dark svg [stroke="#000000"],',
     'html.sch-dark svg [stroke="#212529"],html.sch-dark svg [stroke="black"]{',
     '  stroke:currentColor !important;}'
-  ].join('');
+  ].join('') + tokenCss();
 
   function addBase() {
     var doc = document;
@@ -287,6 +402,10 @@
     for (var i = 0; i < style.length; i++) {
       var name = style[i];
       if (name.indexOf('--') !== 0) continue;
+      // Токены дизайн-системы МЭШ красим целиком своим блоком (TOKENS):
+      // иначе их значения зависят от того, в каком порядке сайт объявил
+      // переменные, и половина интерфейса остаётся светлой.
+      if (/^--(MH|NC)-/i.test(name)) continue;
       var c = parseColor(style.getPropertyValue(name));
       if (!c) continue;
       var kind = customKind(name);
