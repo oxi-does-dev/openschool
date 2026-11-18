@@ -1,5 +1,5 @@
 (function () {
-  var VERSION = 6;
+  var VERSION = 7;
 
   var BASE_ID = 'sch-paper-theme';   // шрифты, фон, ссылки, контролы, скроллбар
   var SITE_ID = 'sch-paper-site';    // перекрашенные правила самого ЦДЗ
@@ -761,11 +761,31 @@
     'html.sch-dark a{color:#8FB0D4 !important;}',
     'html:not(.sch-dark) ::selection{background:#D9CEB8;color:#2B2A26;}',
     'html.sch-dark ::selection{background:#8FB0D4;color:#171613;}',
-    'html.sch-dark input,html.sch-dark textarea,html.sch-dark select{',
-    '  background:#201E1A !important;color:#EAE3D5 !important;',
-    '  border-color:#3E392F !important;}',
+    // Поля ответа. В «результатах прохождений» сайт красит набранный
+    // текст через -webkit-text-fill-color:#000, а не через color: это
+    // свойство сильнее color и наследуется, поэтому текст оставался
+    // чёрным на тёмном поле. Возвращаем ему currentColor, чтобы работать
+    // цвет, вычисленный нашим движком, — включая красный у неверных
+    // ответов, а не глухой белый.
+    'html.sch-dark input,html.sch-dark textarea,html.sch-dark select,',
+    'html.sch-dark [contenteditable="true"],html.sch-dark [contenteditable=""],',
+    'html.sch-dark [contenteditable="plaintext-only"],',
+    'html.sch-dark [role="textbox"]{',
+    '  background:#201E1A !important;background-image:none !important;',
+    '  color:#EAE3D5 !important;-webkit-text-fill-color:currentColor !important;',
+    '  caret-color:currentColor !important;border-color:#3E392F !important;}',
+    'html.sch-dark [contenteditable="true"] *,html.sch-dark [contenteditable=""] *,',
+    'html.sch-dark [contenteditable="plaintext-only"] *,',
+    'html.sch-dark [role="textbox"] *{',
+    '  -webkit-text-fill-color:currentColor !important;}',
     'html.sch-dark input::placeholder,html.sch-dark textarea::placeholder{',
-    '  color:#A79D8B !important;}',
+    '  color:#A79D8B !important;-webkit-text-fill-color:#A79D8B !important;}',
+    // Автозаполнение WebView рисует своё: чёрный текст и светлая заливка.
+    'html.sch-dark input:-webkit-autofill,html.sch-dark textarea:-webkit-autofill{',
+    '  -webkit-text-fill-color:#EAE3D5 !important;',
+    '  -webkit-box-shadow:0 0 0 1000px #201E1A inset !important;',
+    '  caret-color:#EAE3D5 !important;}',
+    'html.sch-dark option{background:#201E1A !important;color:#EAE3D5 !important;}',
     'html.sch-dark ::-webkit-scrollbar{width:10px;height:10px;background:#171613;}',
     'html.sch-dark ::-webkit-scrollbar-thumb{background:#3E392F;border-radius:6px;}',
     'html.sch-dark ::-webkit-scrollbar-thumb:hover{background:#4A4438;}',
@@ -868,6 +888,12 @@
     if (grad) dark.push('background-image:' + grad + ' !important');
     var fg = parseColor(style.getPropertyValue('color'));
     if (fg) push('color', mapFg(fg, false), mapFg(fg, true));
+    // text-fill-color перекрывает color. Если не перекрасить его вместе
+    // с color, поле ответа остаётся с чёрным текстом на тёмном фоне.
+    var textFill = parseColor(style.getPropertyValue('-webkit-text-fill-color'));
+    if (textFill) {
+      push('-webkit-text-fill-color', mapFg(textFill, false), mapFg(textFill, true));
+    }
     // На плотной акцентной заливке текст — ON_ACCENT приложения.
     if (darkBg === DARK.accentBg ||
         /var\(\s*--(?:MH|NC)-(?:UserRole|UserRole-Blue|UserRole-Gray|Background-Blue|Background-Blue-Light|Mobile-Active-Menu)\b/
@@ -1072,7 +1098,7 @@
       var p = style[i];
       if (p === 'color' || p === 'background' || p === 'background-color' ||
           p === 'background-image' || p === 'fill' || p === 'stroke' ||
-          p.indexOf('border') === 0) return true;
+          p === '-webkit-text-fill-color' || p.indexOf('border') === 0) return true;
     }
     return false;
   }
@@ -1103,6 +1129,11 @@
     if (fg) {
       var df = mapFg(fg, true);
       if (df) dark.push('color:' + df + ' !important');
+    }
+    var fillFg = parseColor(st.getPropertyValue('-webkit-text-fill-color'));
+    if (fillFg) {
+      var dff = mapFg(fillFg, true);
+      if (dff) dark.push('-webkit-text-fill-color:' + dff + ' !important');
     }
     if (dbg === DARK.accentBg) dark.push('color:' + DARK.onAccent + ' !important');
 
@@ -1333,6 +1364,11 @@
         if (bg && bg.a > 0.4 && bg.l < 0.32 && fg && fg.a > 0.4 && fg.l < 0.4) {
           sus.push('fg');
         }
+        // Текст может быть светлым по color, но чёрным по text-fill-color.
+        var tf = parseColor(st.getPropertyValue('-webkit-text-fill-color'));
+        if (bg && bg.a > 0.4 && bg.l < 0.32 && tf && tf.a > 0.4 && tf.l < 0.4) {
+          sus.push('fill');
+        }
         var bd = parseColor(st.borderTopColor);
         if (bd && bd.a > 0.2 && bd.l > 0.55 &&
             (parseFloat(st.borderTopWidth) || 0) > 0) sus.push('border');
@@ -1406,11 +1442,57 @@
     return scopes;
   }
 
+  // Реальный фон под полем: у input он часто прозрачный, а тёмная
+  // карточка — у родителя. Нужен, чтобы понять, читается ли текст.
+  function backdrop(el) {
+    var node = el;
+    for (var depth = 0; node && depth < 14; depth++) {
+      var st = null;
+      try { st = window.getComputedStyle(node); } catch (e) { break; }
+      if (!st) break;
+      var bg = parseColor(st.backgroundColor);
+      if (bg && bg.a > 0.4) return bg;
+      node = node.parentElement;
+    }
+    return parseColor(DARK.bg);
+  }
+
+  // Последний рубеж для полей ответа: если сайт всё-таки сумел оставить
+  // тёмный текст на тёмном фоне (inline !important, поздний стиль),
+  // правим инлайном — он сильнее любого селектора. Смысловые цвета
+  // (красный «неверно») не трогаем: у них светлее 0.35.
+  function guardFields() {
+    if (!isDarkOn) return;
+    var list;
+    try {
+      list = document.querySelectorAll(
+          'input,textarea,select,[contenteditable],[role="textbox"]');
+    } catch (e) { return; }
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      var st = null;
+      try { st = window.getComputedStyle(el); } catch (e) { continue; }
+      if (!st) continue;
+      var bg = backdrop(el);
+      if (!bg || bg.l > 0.35) continue;
+      var fill = parseColor(st.getPropertyValue('-webkit-text-fill-color'));
+      if (!fill || fill.a < 0.4) fill = parseColor(st.color);
+      if (!fill || fill.a < 0.4 || fill.l > 0.35) continue;
+      try {
+        el.style.setProperty('color', DARK.ink, 'important');
+        el.style.setProperty('-webkit-text-fill-color', 'currentColor',
+            'important');
+        el.style.setProperty('caret-color', 'currentColor', 'important');
+      } catch (e) { }
+    }
+  }
+
   function decorate() {
     if (isDarkOn) {
       hideWordmark();
       roleBadges();
       paintSvgs();
+      guardFields();
     } else {
       unhideAll();
       roleBadges();
@@ -1496,6 +1578,14 @@
     appliedPalette = JSON.stringify(window.__schPalette);
     mergePalette(window.__schPalette);
   }
+
+  // Поле могли показать и позже тика таймера: проверяем в момент фокуса.
+  try {
+    document.addEventListener('focusin', function () {
+      if (!isDarkOn) return;
+      setTimeout(guardFields, 0);
+    }, true);
+  } catch (e) { }
 
   function boot() {
     addBase();
