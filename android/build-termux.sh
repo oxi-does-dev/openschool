@@ -35,10 +35,17 @@ aapt2 link \
 
 echo "== javac"
 find src "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
-javac --release 11 -encoding UTF-8 \
-    -classpath "$PLATFORM" \
-    -d "$OUT/classes" \
-    @"$OUT/sources.txt" 2>&1 | grep -v "^Note:" || true
+# Ошибки компиляции раньше тонули в pipe из-за grep: сборка могла
+# «пройти» с неполным classes/. Теперь падаем сразу.
+if ! javac --release 11 -encoding UTF-8 \
+        -classpath "$PLATFORM" \
+        -d "$OUT/classes" \
+        @"$OUT/sources.txt" > "$OUT/javac.log" 2>&1; then
+  grep -v "^Note:" "$OUT/javac.log" >&2 || cat "$OUT/javac.log" >&2
+  echo "javac failed" >&2
+  exit 1
+fi
+grep -v "^Note:" "$OUT/javac.log" || true
 
 echo "== d8"
 find "$OUT/classes" -name '*.class' > "$OUT/classes.txt"

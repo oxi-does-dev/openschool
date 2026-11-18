@@ -7,6 +7,7 @@ import android.app.DatePickerDialog;
 import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -275,6 +276,8 @@ public final class MainActivity extends Activity {
     private boolean cdzDark;
 
     private LessonDialog lessonDialog;
+    private long lastForeground;
+    private String openedDay = "";
     private ValueCallback<Uri[]> webFileCallback;
     private Typeface fontMedium;
     private Typeface fontBold;
@@ -285,6 +288,28 @@ public final class MainActivity extends Activity {
     private Uri pendingCameraUri;
 
     // ------------------------------------------------------------- lifecycle
+
+    /**
+     * «Размер текста» в настройках умножает системный масштаб шрифта.
+     * Так можно сделать крупнее только дневник, не трогая весь телефон.
+     */
+    @Override
+    protected void attachBaseContext(Context base) {
+        Context ctx = base;
+        try {
+            float mult = base.getSharedPreferences("sch", MODE_PRIVATE)
+                    .getFloat("font_mult", 1f);
+            if (mult > 1.01f) {
+                Configuration cfg = new Configuration(
+                        base.getResources().getConfiguration());
+                float scaled = cfg.fontScale * mult;
+                cfg.fontScale = scaled > 2.0f ? 2.0f : scaled;
+                ctx = base.createConfigurationContext(cfg);
+            }
+        } catch (Exception ignored) {
+        }
+        super.attachBaseContext(ctx);
+    }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -316,6 +341,8 @@ public final class MainActivity extends Activity {
         String saved = prefs.getString("date", "");
         currentDate = looksLikeDate(saved) ? saved : today();
         dayData = cacheGet("day3:" + currentDate);
+        openedDay = today();
+        lastForeground = System.currentTimeMillis();
 
         if (Notify.enabled(this)) Notify.schedule(this);
 
@@ -326,6 +353,58 @@ public final class MainActivity extends Activity {
         int savedTab = prefs.getInt("tab", TAB_DAY);
         selectTab(savedTab >= TAB_DAY && savedTab <= TAB_MORE ? savedTab : TAB_DAY);
         fetchProfile(false);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        String t = today();
+        // Приложение могли оставить открытым на ночь: «сегодня» уже другое.
+        boolean rollover = !openedDay.isEmpty() && !t.equals(openedDay);
+        if (rollover) {
+            String previous = openedDay;
+            openedDay = t;
+            if (currentDate.equals(previous)) {
+                currentDate = t;
+                prefs.edit().putString("date", t).apply();
+                dayData = cacheGet("day3:" + t);
+                dayError = null;
+                dayAuth = false;
+            }
+        }
+        long now = System.currentTimeMillis();
+        boolean stale = lastForeground > 0
+                && now - lastForeground > 3 * 60 * 1000L;
+        lastForeground = now;
+        if (rollover || stale) refreshVisible(true);
+    }
+
+    /** Обновляет только открытую вкладку — остальные подтянутся при переходе. */
+    private void refreshVisible(boolean force) {
+        if (tab == TAB_DAY) scheduleDayLoad(force);
+        else if (tab == TAB_WEEK) fetchWeek(force);
+        else if (tab == TAB_HW) fetchHw(force);
+        else if (tab == TAB_MARKS) {
+            if (marksView == 0) fetchMarks(force);
+            else if (marksView == 1) fetchRating(force);
+            else fetchFinal(force);
+        } else {
+            fetchProfile(false);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        // Назад — это «вернуться», а не «выбросить приложение».
+        if (tab != TAB_DAY) {
+            selectTab(TAB_DAY);
+            return;
+        }
+        if (!currentDate.equals(today())) {
+            selectDate(today());
+            return;
+        }
+        super.onBackPressed();
     }
 
     @Override
@@ -495,7 +574,8 @@ public final class MainActivity extends Activity {
         if (tab == TAB_DAY) {
             appTitle.setText("Дневник");
             String sub = prettyTitle(currentDate);
-            if (!studentClass.isEmpty()) sub += "  ·  " + studentClass;
+            if (parentAccount && !studentName.isEmpty()) sub += "  ·  " + studentName;
+            else if (!studentClass.isEmpty()) sub += "  ·  " + studentClass;
             appSub.setText(sub);
         } else if (tab == TAB_WEEK) {
             appTitle.setText("Неделя");
@@ -579,6 +659,11 @@ public final class MainActivity extends Activity {
             content.addView(skeletonDay());
         } else {
             if (dayAuth) content.addView(authBanner());
+            if (dayError != null) {
+                content.addView(staleBanner("day3:" + currentDate, new Runnable() {
+                    @Override public void run() { scheduleDayLoad(true); }
+                }));
+            }
             renderDay(content, dayData);
         }
 
@@ -672,15 +757,27 @@ public final class MainActivity extends Activity {
         row.addView(next, new LinearLayout.LayoutParams(dp(40), dp(40)));
 
         if (!currentDate.equals(today())) {
-            TextView t = tv("Сегодня", 12, ACCENT, true);
-            t.setSingleLine(true);
-            t.setPadding(dp(12), dp(7), dp(12), dp(7));
-            t.setBackground(roundBg(ACCENT_SOFT, 20, 0));
-            t.setClickable(true);
-            t.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) { selectDate(today()); }
-            });
-            row.addView(t);
+            if (tight()) {
+                // Текстовая кнопка съедала место у названия месяца.
+                ImageView cal = icon(R.drawable.ic_calendar, ACCENT, 18);
+                cal.setPadding(dp(10), dp(10), dp(10), dp(10));
+                cal.setBackground(rippleBg(ACCENT_SOFT, 20));
+                cal.setContentDescription("Вернуться к сегодняшнему дню");
+                cal.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) { selectDate(today()); }
+                });
+                row.addView(cal, new LinearLayout.LayoutParams(dp(40), dp(40)));
+            } else {
+                TextView t = tv("Сегодня", 12, ACCENT, true);
+                t.setSingleLine(true);
+                t.setPadding(dp(12), dp(7), dp(12), dp(7));
+                t.setBackground(roundBg(ACCENT_SOFT, 20, 0));
+                t.setClickable(true);
+                t.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) { selectDate(today()); }
+                });
+                row.addView(t);
+            }
         }
         return row;
     }
@@ -834,6 +931,25 @@ public final class MainActivity extends Activity {
 
     }
 
+    /** Полное ДЗ этого урока (с материалами и ЦДЗ), если оно есть в дне. */
+    private JSONObject homeworkFor(JSONObject lesson) {
+        JSONArray hws = dayData == null ? null : dayData.optJSONArray("homeworks");
+        if (hws == null) return null;
+        String subject = subjectOf(lesson).trim();
+        String end = Api.s(lesson, "end");
+        JSONObject fallback = null;
+        for (int i = 0; i < hws.length(); i++) {
+            JSONObject h = hws.optJSONObject(i);
+            if (h == null) continue;
+            String subj = Api.s(h, "subject").trim();
+            if (subject.isEmpty() || !subj.equalsIgnoreCase(subject)) continue;
+            String lt = Api.s(h, "lesson_time");
+            if (!end.isEmpty() && end.equals(lt)) return h;
+            if (fallback == null) fallback = h;
+        }
+        return fallback;
+    }
+
     private View lessonCard(final JSONObject l) {
         boolean current = false;
         if (currentDate.equals(today())) {
@@ -926,10 +1042,12 @@ public final class MainActivity extends Activity {
             body.addView(tag("замена", AMBER, soft(AMBER)));
         }
 
+        final JSONObject fullHw = homeworkFor(l);
         String hw = Api.s(l, "homework").trim();
         if (!hw.isEmpty()) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(0, dp(7), 0, 0);
             row.addView(tag("ДЗ", AMBER, soft(AMBER)));
             TextView t = tv(hw, 13, AMBER, false);
@@ -938,7 +1056,38 @@ public final class MainActivity extends Activity {
             t.setPadding(dp(6), 0, 0, 0);
             row.addView(t, new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            if (fullHw != null) {
+                // В карточке дня ДЗ было только текстом: подробности
+                // (файлы, материалы, ЦДЗ) открывались лишь на вкладке ДЗ.
+                row.setClickable(true);
+                row.setBackground(rippleBg(0x00000000, 2));
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View v) {
+                        showHomeworkDetails(fullHw);
+                    }
+                });
+                if (!tight()) {
+                    row.addView(icon(R.drawable.ic_chevron, MUTED, 14));
+                }
+            }
             body.addView(row);
+        }
+
+        JSONObject digital = fullHw == null ? null : firstDigital(fullHw);
+        if (digital != null) {
+            final String entry = Api.s(fullHw, "entry");
+            final String uuid = Api.s(digital, "uuid");
+            final String title = Api.s(digital, "title");
+            View go = gradientButton(
+                    title.isEmpty() ? "Пройти ЦДЗ" : "Пройти  ·  " + title,
+                    R.drawable.ic_play, new Runnable() {
+                        @Override public void run() { openCdz(entry, uuid, title); }
+                    });
+            LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            glp.topMargin = dp(7);
+            body.addView(go, glp);
         }
 
         card.addView(body, new LinearLayout.LayoutParams(
@@ -1047,29 +1196,41 @@ public final class MainActivity extends Activity {
         body.setPadding(0, dp(4), 0, 0);
         card.addView(body);
 
-        LinearLayout meta = new LinearLayout(this);
-        meta.setOrientation(LinearLayout.HORIZONTAL);
-        meta.setPadding(0, dp(7), 0, 0);
+        java.util.List<View> metaItems = new java.util.ArrayList<>();
 
         String lt = Api.s(h, "lesson_time");
         String ls = Api.s(h, "lesson_start");
         if (!lt.isEmpty()) {
             String when = ls.isEmpty() ? "до " + lt : "урок " + ls + "–" + lt;
-            meta.addView(tag(when, MUTED, SURFACE2));
+            metaItems.add(tag(when, MUTED, SURFACE2));
         }
 
         int files = 0;
         JSONArray fa = h.optJSONArray("files");
         if (fa != null) files = fa.length();
         int nMat = h.optInt("attachments", 0) + h.optInt("materials", 0);
-        if (nMat > 0) meta.addView(tag(nMat + " " + plural(nMat, "материал",
+        if (nMat > 0) metaItems.add(tag(nMat + " " + plural(nMat, "материал",
                 "материала", "материалов"), MUTED, SURFACE2));
-        if (files > 0) meta.addView(tag(files + " " + plural(files, "файл",
+        if (files > 0) metaItems.add(tag(files + " " + plural(files, "файл",
                 "файла", "файлов"), MUTED, SURFACE2));
         if (Api.b(h, "has_teacher_answer")) {
-            meta.addView(tag("ответ учителя", GREEN, soft(GREEN)));
+            metaItems.add(tag("ответ учителя", GREEN, soft(GREEN)));
         }
-        if (meta.getChildCount() > 0) card.addView(meta);
+        if (!metaItems.isEmpty()) {
+            if (tight()) {
+                LinearLayout flow = chipFlow(metaItems);
+                flow.setPadding(0, dp(7), 0, 0);
+                card.addView(flow);
+            } else {
+                LinearLayout meta = new LinearLayout(this);
+                meta.setOrientation(LinearLayout.HORIZONTAL);
+                meta.setPadding(0, dp(7), 0, 0);
+                for (int i = 0; i < metaItems.size(); i++) {
+                    meta.addView(metaItems.get(i));
+                }
+                card.addView(meta);
+            }
+        }
 
         final JSONObject cdz = firstDigital(h);
         if (cdz != null) {
@@ -1145,6 +1306,12 @@ public final class MainActivity extends Activity {
             content.addView(skeletonMarks());
         } else {
             if (hwAuth) content.addView(authBanner());
+            if (hwError != null && hwFrom != null && hwTo != null) {
+                content.addView(staleBanner("hw3:" + hwFrom + ":" + hwTo,
+                        new Runnable() {
+                            @Override public void run() { fetchHw(true); }
+                        }));
+            }
             renderHomework(content, hwData);
         }
 
@@ -1376,6 +1543,13 @@ public final class MainActivity extends Activity {
                 if (!finalLoading) fetchFinal(false);
             } else {
                 if (finalAuth) content.addView(authBanner());
+                if (finalError != null) {
+                    content.addView(staleBanner(
+                            "final2:" + selectedChildId + ":" + today(),
+                            new Runnable() {
+                                @Override public void run() { fetchFinal(true); }
+                            }));
+                }
                 renderFinal(content, finalData);
             }
         } else if (marksView == 1) {
@@ -1390,6 +1564,11 @@ public final class MainActivity extends Activity {
                 content.addView(skeletonMarks());
                 if (!ratingLoading) fetchRating(false);
             } else {
+                if (ratingError != null) {
+                    content.addView(staleBanner("rating:" + today(), new Runnable() {
+                        @Override public void run() { fetchRating(true); }
+                    }));
+                }
                 renderRating(content, ratingData);
             }
         } else if (marksAuth && marksData == null) {
@@ -1403,6 +1582,13 @@ public final class MainActivity extends Activity {
             content.addView(skeletonMarks());
         } else {
             if (marksAuth) content.addView(authBanner());
+            if (marksError != null && marksFrom != null && marksTo != null) {
+                content.addView(staleBanner(
+                        "marks2:" + marksFrom + ":" + marksTo,
+                        new Runnable() {
+                            @Override public void run() { fetchMarks(true); }
+                        }));
+            }
             renderMarks(content, marksData);
         }
 
@@ -2762,6 +2948,36 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
+    private String fontLabel() {
+        float m = prefs.getFloat("font_mult", 1f);
+        if (m > 1.25f) return "самый крупный";
+        if (m > 1.05f) return "крупнее";
+        return "как в системе";
+    }
+
+    private void fontDialog() {
+        final String[] labels = {"Как в системе", "Крупнее", "Самый крупный"};
+        final float[] values = {1f, 1.15f, 1.35f};
+        float cur = prefs.getFloat("font_mult", 1f);
+        int sel = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (Math.abs(values[i] - cur) < 0.02f) sel = i;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Размер текста")
+                .setMessage("Масштаб складывается с системным: если в телефоне "
+                        + "уже крупный шрифт, приложение станет ещё крупнее.")
+                .setSingleChoiceItems(labels, sel, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int which) {
+                        prefs.edit().putFloat("font_mult", values[which]).apply();
+                        d.dismiss();
+                        recreate();
+                    }
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
     private View buildMore() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -2807,6 +3023,11 @@ public final class MainActivity extends Activity {
         actions.addView(actionRow(R.drawable.ic_theme, "Тема",
                 darkTheme ? "Тёмная бумага" : "Светлая бумага", false, new Runnable() {
                     @Override public void run() { themeDialog(); }
+                }));
+        actions.addView(actionDivider());
+        actions.addView(actionRow(R.drawable.ic_text, "Размер текста",
+                "Сейчас: " + fontLabel(), false, new Runnable() {
+                    @Override public void run() { fontDialog(); }
                 }));
         actions.addView(actionDivider());
         actions.addView(actionRow(R.drawable.ic_refresh, "Обновить профиль",
@@ -3473,6 +3694,13 @@ public final class MainActivity extends Activity {
             content.addView(skeletonMarks());
         } else {
             if (weekAuth) content.addView(authBanner());
+            if (weekError != null) {
+                final String cacheKey = "week3:" + (weekStart != null
+                        ? weekStart : mondayOf(today()));
+                content.addView(staleBanner(cacheKey, new Runnable() {
+                    @Override public void run() { fetchWeek(true); }
+                }));
+            }
             renderWeek(content, weekData);
         }
 
@@ -5333,6 +5561,9 @@ public final class MainActivity extends Activity {
 
         TextView t = tvSans(label, 14, ON_ACCENT, true);
         t.setGravity(Gravity.CENTER);
+        t.setMaxLines(2);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        row.setMinimumHeight(dp(44));
         if (iconRes != 0) t.setPadding(dp(8), 0, 0, 0);
         row.addView(t);
 
@@ -5358,6 +5589,9 @@ public final class MainActivity extends Activity {
 
         TextView t = tvSans(label, 13, TEXT, true);
         t.setGravity(Gravity.CENTER);
+        t.setMaxLines(2);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        row.setMinimumHeight(dp(44));
         if (iconRes != 0) t.setPadding(dp(7), 0, 0, 0);
         row.addView(t);
 
@@ -5875,6 +6109,12 @@ public final class MainActivity extends Activity {
         themeBtn.setBackground(rippleBg(0x00000000, 20));
         themeBtn.setContentDescription(cdzDark ? "Светлая тема" : "Тёмная тема");
         head.addView(themeBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        final ImageView reloadBtn = icon(R.drawable.ic_refresh, MUTED, 20);
+        reloadBtn.setPadding(dp(10), dp(10), dp(10), dp(10));
+        reloadBtn.setBackground(rippleBg(0x00000000, 20));
+        reloadBtn.setContentDescription("Обновить задание");
+        head.addView(reloadBtn, new LinearLayout.LayoutParams(dp(40), dp(40)));
         root.addView(head);
 
         View line = new View(this);
@@ -5938,6 +6178,13 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(stage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        reloadBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                v.animate().rotationBy(360f).setDuration(500).start();
+                web.reload();
+            }
+        });
 
         themeBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -6173,26 +6420,34 @@ public final class MainActivity extends Activity {
             box.addView(w);
         }
 
-        LinearLayout tags = new LinearLayout(this);
-        tags.setOrientation(LinearLayout.HORIZONTAL);
-        tags.setPadding(0, dp(10), 0, dp(2));
+        java.util.List<View> tagItems = new java.util.ArrayList<>();
         if (Api.b(h, "done")) {
-            tags.addView(tag("выполнено", GREEN, soft(GREEN)));
+            tagItems.add(tag("выполнено", GREEN, soft(GREEN)));
         } else {
-            tags.addView(tag("не выполнено", AMBER, 0x1F9A6A22));
+            tagItems.add(tag("не выполнено", AMBER, 0x1F9A6A22));
         }
         final JSONObject cdz = firstDigital(h);
-        if (cdz != null) tags.addView(tag("ЦДЗ", ACCENT, ACCENT_SOFT));
+        if (cdz != null) tagItems.add(tag("ЦДЗ", ACCENT, ACCENT_SOFT));
         if (Api.b(h, "has_teacher_answer")) {
-            tags.addView(tag("ответ учителя", GREEN, soft(GREEN)));
+            tagItems.add(tag("ответ учителя", GREEN, soft(GREEN)));
         }
         JSONArray fa = h.optJSONArray("files");
         int files = uniqueFileCount(h, fa);
         if (files > 0) {
-            tags.addView(tag(files + " " + plural(files, "файл",
+            tagItems.add(tag(files + " " + plural(files, "файл",
                     "файла", "файлов"), MUTED, SURFACE2));
         }
-        box.addView(tags);
+        if (tight()) {
+            LinearLayout flow = chipFlow(tagItems);
+            flow.setPadding(0, dp(10), 0, dp(2));
+            box.addView(flow);
+        } else {
+            LinearLayout tags = new LinearLayout(this);
+            tags.setOrientation(LinearLayout.HORIZONTAL);
+            tags.setPadding(0, dp(10), 0, dp(2));
+            for (int i = 0; i < tagItems.size(); i++) tags.addView(tagItems.get(i));
+            box.addView(tags);
+        }
 
         String text = Api.s(h, "text").trim();
         if (!text.isEmpty()) {
@@ -6306,6 +6561,35 @@ public final class MainActivity extends Activity {
             box.addView(ans);
         }
 
+        final String shareText = homeworkShareText(h);
+        if (!shareText.isEmpty()) {
+            TextView copy = secondaryButton("Копировать", new Runnable() {
+                @Override public void run() {
+                    ClipboardManager cm = (ClipboardManager)
+                            getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(ClipData.newPlainText(
+                                "Домашнее задание", shareText));
+                        toast("Задание скопировано");
+                    }
+                }
+            });
+            TextView share = secondaryButton("Поделиться", new Runnable() {
+                @Override public void run() {
+                    Intent i = new Intent(Intent.ACTION_SEND);
+                    i.setType("text/plain");
+                    i.putExtra(Intent.EXTRA_TEXT, shareText);
+                    startActivity(Intent.createChooser(i, "Поделиться заданием"));
+                }
+            });
+            View actions = buttonPair(copy, share);
+            LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            alp.topMargin = dp(14);
+            box.addView(actions, alp);
+        }
+
         LinearLayout dump = new LinearLayout(this);
         dump.setOrientation(LinearLayout.VERTICAL);
         String json;
@@ -6333,6 +6617,45 @@ public final class MainActivity extends Activity {
         d.show();
     }
 
+    /** ДЗ простым текстом — чтобы отправить родителю или в заметки. */
+    private String homeworkShareText(JSONObject h) {
+        StringBuilder sb = new StringBuilder();
+        String subject = Api.s(h, "subject");
+        if (!subject.isEmpty()) sb.append(subject);
+        String date = Api.s(h, "date");
+        if (!date.isEmpty()) {
+            String label = hwDateLabel(date);
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append(label);
+        }
+        String lt = Api.s(h, "lesson_time");
+        String ls = Api.s(h, "lesson_start");
+        if (!lt.isEmpty()) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append("урок ");
+            if (!ls.isEmpty()) sb.append(ls).append("–");
+            else sb.append("до ");
+            sb.append(lt);
+        }
+        String text = Api.s(h, "text").trim();
+        if (!text.isEmpty()) {
+            if (sb.length() > 0) sb.append("\n\n");
+            sb.append(text);
+        }
+        JSONArray mats = h.optJSONArray("materials_list");
+        if (mats != null && mats.length() > 0) {
+            sb.append("\n\nМатериалы:");
+            for (int i = 0; i < mats.length(); i++) {
+                JSONObject m = mats.optJSONObject(i);
+                if (m == null) continue;
+                String title = Api.s(m, "title");
+                if (title.isEmpty()) continue;
+                sb.append("\n• ").append(title);
+            }
+        }
+        return sb.toString().trim();
+    }
+
     private TextView detailLabel(String s) {
         TextView t = tv(s.toUpperCase(Locale.ROOT), 10, MUTED, true);
         t.setLetterSpacing(0.08f);
@@ -6348,18 +6671,28 @@ public final class MainActivity extends Activity {
 
     // ------------------------------------------------------------- меню/диалоги
 
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
     private void about() {
         File dir = getExternalFilesDir(null);
         new AlertDialog.Builder(this)
                 .setTitle("OpenSchool")
-                .setMessage("OpenSchool. Дневник МЭШ. Версия 1.6\n\n"
+                .setMessage("OpenSchool. Дневник МЭШ. Версия " + versionName() + "\n\n"
                         + "Данные берутся с school.mos.ru по вашей сессии. "
                         + "Cookies хранятся только внутри приложения.\n\n"
                         + "Вход: «Ещё → Войти в МЭШ» или кнопка на экране входа.\n"
                         + "Импорт: ~/.cache/sch/cookies.json с ПК.\n"
                         + "Папка для файла:\n"
                         + (dir == null ? "Android/data/ru.sch.diary/files"
-                                       : dir.getAbsolutePath()) + "/cookies.json")
+                                       : dir.getAbsolutePath()) + "/cookies.json\n\n"
+                        + "2.4: размер текста в настройках, копирование и отправка "
+                        + "домашнего задания, плашка «нет связи» с временем данных.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
@@ -6369,8 +6702,10 @@ public final class MainActivity extends Activity {
         for (String key : prefs.getAll().keySet()) {
             if (key.startsWith("day:") || key.startsWith("day2:") || key.startsWith("day3:")
                     || key.startsWith("marks:") || key.startsWith("marks2:")
-                    || key.startsWith("hw3:") || key.startsWith("rating:")
-                    || key.startsWith("rankclass:")) {
+                    || key.startsWith("hw3:") || key.startsWith("week3:")
+                    || key.startsWith("final2:") || key.startsWith("rating:")
+                    || key.startsWith("rankclass:") || key.equals("profile")
+                    || key.endsWith("#at")) {
                 ed.remove(key);
             }
         }
@@ -6379,7 +6714,14 @@ public final class MainActivity extends Activity {
         marksData = null;
         marksFrom = null;
         marksTo = null;
-        toast("Кэш дней очищен");
+        weekData = null;
+        weekLoaded = null;
+        finalData = null;
+        ratingData = null;
+        hwData = null;
+        hwFrom = null;
+        hwTo = null;
+        toast("Кэш очищен");
         renderTab();
     }
 
@@ -6720,7 +7062,58 @@ public final class MainActivity extends Activity {
     }
 
     private void cachePut(String key, String raw) {
-        prefs.edit().putString(key, raw).apply();
+        prefs.edit().putString(key, raw)
+                .putLong(key + "#at", System.currentTimeMillis()).apply();
+    }
+
+    /** Когда эти данные реально пришли с сервера. */
+    private String cacheAtLabel(String key) {
+        long at = prefs.getLong(key + "#at", 0L);
+        if (at <= 0) return "";
+        Date d = new Date(at);
+        String day = isoFormat().format(d);
+        String hm = new SimpleDateFormat("HH:mm", Locale.US).format(d);
+        if (day.equals(today())) return hm;
+        return new SimpleDateFormat("dd.MM", Locale.US).format(d) + ", " + hm;
+    }
+
+    /**
+     * Когда связи нет, приложение показывает кэш. Без этой плашки было
+     * непонятно, что данные старые.
+     */
+    private View staleBanner(String key, final Runnable retry) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(8), dp(8), dp(8));
+        card.setBackground(roundBg(SURFACE2, 3, STROKE));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        card.setLayoutParams(lp);
+
+        String at = cacheAtLabel(key);
+        TextView t = tv(at.isEmpty()
+                ? "Нет связи — показаны сохранённые данные"
+                : "Нет связи — данные от " + at,
+                11, MUTED, false);
+        t.setMaxLines(2);
+        card.addView(t, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView b = tv("Обновить", 12, ACCENT, true);
+        b.setSingleLine(true);
+        b.setPadding(dp(10), dp(6), dp(10), dp(6));
+        b.setBackground(roundBg(ACCENT_SOFT, 14, 0));
+        b.setClickable(true);
+        b.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (retry != null) retry.run();
+            }
+        });
+        card.addView(b);
+        return card;
     }
 
     // ------------------------------------------------------------- даты
@@ -7124,6 +7517,8 @@ public final class MainActivity extends Activity {
 
     private TextView tag(String text, int color, int bg) {
         TextView t = tv(text, 10, color, true);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
         t.setPadding(dp(7), dp(3), dp(7), dp(3));
         t.setBackground(roundBg(bg, 3, 0));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
