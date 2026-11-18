@@ -6062,6 +6062,101 @@ public final class MainActivity extends Activity {
         });
     }
 
+    /**
+     * Диагностика темы ЦДЗ: сайт огромный, и глазами по скриншоту не видно,
+     * какой именно элемент остался светлым. Долгое нажатие на луну отдаёт
+     * список таких элементов, его можно скопировать и прислать.
+     */
+    private void themeReport(final WebView web) {
+        toast("Собираю отчёт…");
+        web.evaluateJavascript(
+                "(window.__schPaper&&window.__schPaper.report)"
+                        + "?window.__schPaper.report():''",
+                new ValueCallback<String>() {
+                    @Override public void onReceiveValue(String raw) {
+                        String text = unquoteJson(raw);
+                        if (text == null || text.trim().isEmpty()) {
+                            toast("Отчёт не готов: страница ещё грузится");
+                            return;
+                        }
+                        showThemeReport(text);
+                    }
+                });
+    }
+
+    private static String unquoteJson(String raw) {
+        if (raw == null) return "";
+        String s = raw.trim();
+        if (s.isEmpty() || "null".equals(s)) return "";
+        if (s.charAt(0) == '"') {
+            try {
+                return new JSONArray("[" + s + "]").optString(0);
+            } catch (Exception e) {
+                return s;
+            }
+        }
+        return s;
+    }
+
+    private void showThemeReport(final String text) {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(roundBg(BG, 4, STROKE));
+        root.setPadding(dp(16), dp(14), dp(16), dp(10));
+
+        root.addView(tvSerif("Отчёт о теме", 20, TEXT, true));
+        TextView hint = tv("Скопируй и пришли: по нему видно, какие элементы "
+                + "страницы остались светлыми.", 12, MUTED, false);
+        hint.setPadding(0, dp(4), 0, dp(8));
+        root.addView(hint);
+
+        TextView body = tv(text, 10, TEXT, false);
+        body.setTypeface(Typeface.MONOSPACE);
+        body.setTextIsSelectable(true);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(body);
+        root.addView(sv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(10), 0, 0);
+        row.addView(secondaryButton("Скопировать", new Runnable() {
+            @Override public void run() {
+                ClipboardManager cm = (ClipboardManager)
+                        getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("Отчёт о теме", text));
+                    toast("Отчёт скопирован");
+                }
+            }
+        }));
+        row.addView(secondaryButton("Поделиться", new Runnable() {
+            @Override public void run() {
+                Intent i = new Intent(Intent.ACTION_SEND);
+                i.setType("text/plain");
+                i.putExtra(Intent.EXTRA_TEXT, text);
+                startActivity(Intent.createChooser(i, "Отчёт о теме"));
+            }
+        }));
+        root.addView(row);
+
+        d.setContentView(root);
+        Window win = d.getWindow();
+        if (win != null) {
+            win.setBackgroundDrawable(new ColorDrawable(0x00000000));
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
+            lp.copyFrom(win.getAttributes());
+            lp.width = WindowManager.LayoutParams.MATCH_PARENT;
+            lp.height = WindowManager.LayoutParams.MATCH_PARENT;
+            win.setAttributes(lp);
+        }
+        d.show();
+    }
+
     private String cdzTheme() {
         if (cdzThemeJs != null) return cdzThemeJs;
         try (InputStream in = getAssets().open("cdz-paper.js")) {
@@ -6198,6 +6293,13 @@ public final class MainActivity extends Activity {
                 loading.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
                 web.evaluateJavascript("window.__schPaper&&window.__schPaper.set("
                         + cdzDark + ")", null);
+            }
+        });
+        // Долгое нажатие на луну — отчёт о том, что осталось светлым.
+        themeBtn.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View v) {
+                themeReport(web);
+                return true;
             }
         });
 
@@ -6692,7 +6794,10 @@ public final class MainActivity extends Activity {
                         + (dir == null ? "Android/data/ru.sch.diary/files"
                                        : dir.getAbsolutePath()) + "/cookies.json\n\n"
                         + "2.4: размер текста в настройках, копирование и отправка "
-                        + "домашнего задания, плашка «нет связи» с временем данных.")
+                        + "домашнего задания, плашка «нет связи» с временем данных.\n\n"
+                        + "2.5: тёмная тема ЦДЗ переведена на токены дизайн-системы "
+                        + "(карточки, рамки ответов, экран результата). Долгое нажатие "
+                        + "на луну в окне задания — отчёт о том, что осталось светлым.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }

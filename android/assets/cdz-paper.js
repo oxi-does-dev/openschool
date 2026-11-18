@@ -1,5 +1,5 @@
 (function () {
-  var VERSION = 4;
+  var VERSION = 5;
 
   var BASE_ID = 'sch-paper-theme';   // шрифты, фон, ссылки, контролы, скроллбар
   var SITE_ID = 'sch-paper-site';    // перекрашенные правила самого ЦДЗ
@@ -276,9 +276,51 @@
     if (!c || c.a < 0.15) return null;
     if (!dark) return c.l > 0.85 ? LIGHT.line : null;
     var role = roleOf(c);
-    if (role) return withAlpha(roleColor(c, true), 0.55);
+    // Фирменный фиолетовый почти всегда декоративная рамка вокруг карточки.
+    // В палитре он светло-сиреневый, и толстая рамка выглядела грязно.
+    if (role === 'violet') return DARK.line;
+    if (role === 'blue') return withAlpha(DARK.accent, 0.45);
+    if (role) return withAlpha(roleColor(c, true), 0.45);
     if (c.l < 0.2) return null;
     return DARK.line;
+  }
+
+  // Тень — тоже цвет, и на тёмном фоне светлая тень выглядит как рамка
+  // или ореол вокруг карточки. Перекрашиваем цвета внутри значения.
+  function mapShadow(value, dark) {
+    if (!dark || !value || value === 'none') return null;
+    if (!/rgba?\(|#[0-9a-f]{3,8}\b/i.test(value)) return null;
+    var inset = /inset/i.test(value);
+    var changed = false;
+    var out = value.replace(COLOR_TOKEN, function (tok) {
+      var c = parseColor(tok);
+      if (!c || c.a < 0.02) return tok;
+      var role = roleOf(c);
+      var rep;
+      if (role && c.a >= 0.5 && c.l < 0.6) {
+        // Насыщенная цветная тень — это фокус/подсветка, её оставляем цветной.
+        rep = withAlpha(roleColor(c, true), Math.min(0.5, c.a));
+      } else if (c.l >= 0.55) {
+        // Светлая тень на тёмном фоне = ореол. Убираем в линию или в тень.
+        rep = inset ? DARK.line : 'rgba(0,0,0,0.45)';
+      } else {
+        rep = 'rgba(0,0,0,' + Math.min(0.6, Math.max(0.15, c.a * 2)) + ')';
+      }
+      if (rep !== tok) changed = true;
+      return rep;
+    });
+    return changed ? out : null;
+  }
+
+  // Границы, заданные ссылкой на токен: var(--MH-Color-School) — это цвет
+  // школы, у неё бывает насыщенный фиолетовый. Как рамка он не нужен.
+  function borderFromVar(value, dark) {
+    if (!dark || !value || !/var\(/i.test(value)) return null;
+    var m = /var\(\s*--(?:MH|NC|MF)-([A-Za-z0-9-]+)/.exec(value);
+    if (!m) return null;
+    var n = m[1].toLowerCase();
+    if (/violet|school|grape|magenta/.test(n)) return DARK.line;
+    return null;
   }
 
   function mapInk(c, dark) {
@@ -316,6 +358,10 @@
     '-UserBar-Active-Blue': '#201E1A',
     '-UserBar-Active-Dark': '#171613',
     '-UserBar-Active': 'rgba(143,176,212,0.165)',
+    '-IconWrap': '#2A2721',
+    '-IconWrap-Active': 'rgba(143,176,212,0.24)',
+    '-Avatar': 'rgba(143,176,212,0.22)',
+    '-Notify-Icon-Light': '#2A2721',
     '-IconUser': '#A79D8B',
     '-Push': '#D9827A',
     '-MenuItem-Black': '#EAE3D5',
@@ -341,8 +387,271 @@
     '-Button-Background': 'rgba(143,176,212,0.165)',
     '-Button-Color': '#8FB0D4',
     '-Button-Background-Hover': '#8FB0D4',
-    '-Color-School': '#B79BC4'
+    '-Color-School': '#8FB0D4'
   };
+
+  // --- дизайн-система ЦДЗ (Lemma, --LM-*) ----------------------------------
+  // У неё собственный тёмный набор переменных, но включается он классом,
+  // которого сайт при тёмной теме не ставит. Мы (1) находим этот класс в CSS
+  // и включаем сами, (2) поверх кладём точную палитру приложения. Именно
+  // --LM-* отвечают за карточки ответов, рамки и экран результата, поэтому
+  // без них половина ЦДЗ оставалась светлой.
+
+  var LM_BASE = {
+    'layer-background': '#171613',
+    'layer-1': '#201E1A',
+    'layer-1-alt': '#201E1A',
+    'layer-2': '#2A2721',
+    'layer-2-alt': '#2A2721',
+    'layer-inverted': '#EAE3D5',
+    'layer-overlay': 'rgba(23,22,19,0.74)',
+    'layer-darken': 'rgba(23,22,19,0.9)',
+    'layer-on-solid': '#171613',
+    'layer-on-solid-soft': 'rgba(23,22,19,0.16)',
+    'layer-neutral-subtle': 'rgba(234,227,213,0.05)',
+    'layer-neutral-soft': 'rgba(234,227,213,0.09)',
+    'layer-neutral-solid': '#3E392F',
+    'layer-accent-solid': '#8FB0D4',
+    'layer-accent-subtle': 'rgba(143,176,212,0.10)',
+    'layer-accent-soft': 'rgba(143,176,212,0.22)',
+    'layer-negative-solid': '#D9827A',
+    'layer-negative-subtle': 'rgba(217,130,122,0.10)',
+    'layer-negative-soft': 'rgba(217,130,122,0.22)',
+    'layer-warning-solid': '#D6A960',
+    'layer-warning-subtle': 'rgba(214,169,96,0.10)',
+    'layer-warning-soft': 'rgba(214,169,96,0.22)',
+    'layer-positive-solid': '#85B394',
+    'layer-positive-subtle': 'rgba(133,179,148,0.10)',
+    'layer-positive-soft': 'rgba(133,179,148,0.22)',
+    'content-primary': '#EAE3D5',
+    'content-secondary': '#A79D8B',
+    'content-tertiary': '#A79D8B',
+    'content-accent': '#8FB0D4',
+    'content-negative': '#D9827A',
+    'content-warning': '#D6A960',
+    'content-positive': '#85B394',
+    'content-on-solid': '#171613',
+    'content-accent-on-soft': '#8FB0D4',
+    'content-negative-on-soft': '#D9827A',
+    'content-warning-on-soft': '#D6A960',
+    'content-positive-on-soft': '#85B394',
+    'content-inverted': '#171613',
+    'content-on-layer-on-solid-primary': '#171613',
+    'content-on-layer-on-solid-secondary': 'rgba(23,22,19,0.7)',
+    'border-on-layer-1': '#3E392F',
+    'border-on-layer-2': '#3E392F',
+    'border-control': '#3E392F',
+    'border-on-solid': '#171613',
+    'border-neutral-soft': '#35312A',
+    'border-accent-solid': '#8FB0D4',
+    'border-accent-soft': 'rgba(143,176,212,0.40)',
+    'border-negative-solid': '#D9827A',
+    'border-negative-soft': 'rgba(217,130,122,0.40)',
+    'border-warning-solid': '#D6A960',
+    'border-warning-soft': 'rgba(214,169,96,0.40)',
+    'border-positive-solid': '#85B394',
+    'border-positive-soft': 'rgba(133,179,148,0.40)',
+    'icon-neutral-solid': '#A79D8B',
+    'icon-neutral-soft': 'rgba(167,157,139,0.45)',
+    'icon-accent-solid': '#8FB0D4',
+    'icon-negative-solid': '#D9827A',
+    'icon-warning-solid': '#D6A960',
+    'icon-positive-solid': '#85B394',
+    'toggle-track-off': 'rgba(234,227,213,0.16)',
+    'toggle-track-off-disabled': 'rgba(234,227,213,0.08)',
+    'toggle-track-on': '#85B394',
+    'toggle-track-on-disabled': 'rgba(133,179,148,0.4)',
+    'toggle-knob': '#EAE3D5',
+    'toggle-knob-disabled': '#A79D8B',
+    'switcher-selected-item-bg': '#2A2721',
+    'slider-knob': '#EAE3D5',
+    'slider-knob-border': '#3E392F',
+    'slider-knob-disabled': '#3E392F',
+    'slider-selected-range-disabled': '#3E392F',
+    'gheader-b2c-bg': '#201E1A',
+    'gheader-b2c-bg-hover': '#2A2721',
+    'gheader-b2c-content-primary': '#EAE3D5',
+    'gheader-b2c-content-secondary': '#A79D8B',
+    'gheader-b2b-bg-color': '#201E1A',
+    'gheader-b2b-bg-color-hover': '#2A2721',
+    'gheader-b2b-bg-dark': '#171613',
+    'gheader-b2b-bg-dark-hover': '#2A2721',
+    'gheader-b2b-content-primary': '#EAE3D5',
+    'gheader-b2b-content-secondary-on-color': '#A79D8B',
+    'btn-on-sol-bg': '#201E1A',
+    'btn-on-sol-accent-cont': '#8FB0D4',
+    'btn-on-sol-accent-cont-hover': '#8FB0D4',
+    'btn-on-sol-accent-cont-pressed': '#8FB0D4',
+    'btn-on-sol-negative-cont': '#D9827A',
+    'btn-on-sol-negative-cont-hover': '#D9827A',
+    'btn-on-sol-negative-cont-pressed': '#D9827A',
+    'btn-on-sol-positive-cont': '#85B394',
+    'btn-on-sol-positive-cont-hover': '#85B394',
+    'btn-on-sol-positive-cont-pressed': '#85B394',
+    'btn-on-sol-warning-cont': '#D6A960',
+    'btn-on-sol-warning-cont-hover': '#D6A960',
+    'btn-on-sol-warning-cont-pressed': '#D6A960',
+    'btn-on-sol-content-disabled': '#A79D8B'
+  };
+
+  // Hover/pressed/disabled тоже заданы токенами: если их не перекрыть,
+  // кнопки «светятся» белым при нажатии.
+  var LM_INTERACTIVE = {
+    'interactive-layer-accent-solid-hover': '#8FB0D4',
+    'interactive-layer-accent-solid-pressed': '#8FB0D4',
+    'interactive-layer-negative-solid-hover': '#D9827A',
+    'interactive-layer-negative-solid-pressed': '#D9827A',
+    'interactive-layer-warning-solid-hover': '#D6A960',
+    'interactive-layer-warning-solid-pressed': '#D6A960',
+    'interactive-layer-positive-solid-hover': '#85B394',
+    'interactive-layer-positive-solid-pressed': '#85B394',
+    'interactive-layer-2-hover': '#2A2721',
+    'interactive-layer-2-pressed': '#2A2721',
+    'interactive-layer-accent-soft-hover': 'rgba(143,176,212,0.30)',
+    'interactive-layer-accent-soft-pressed': 'rgba(143,176,212,0.38)',
+    'interactive-layer-negative-soft-hover': 'rgba(217,130,122,0.30)',
+    'interactive-layer-negative-soft-pressed': 'rgba(217,130,122,0.38)',
+    'interactive-layer-warning-soft-hover': 'rgba(214,169,96,0.30)',
+    'interactive-layer-warning-soft-pressed': 'rgba(214,169,96,0.38)',
+    'interactive-layer-positive-soft-hover': 'rgba(133,179,148,0.30)',
+    'interactive-layer-positive-soft-pressed': 'rgba(133,179,148,0.38)',
+    'interactive-layer-neutral-soft-hover': 'rgba(234,227,213,0.12)',
+    'interactive-layer-neutral-soft-pressed': 'rgba(234,227,213,0.16)',
+    'interactive-layer-neutral-solid-hover': '#3E392F',
+    'interactive-layer-neutral-solid-pressed': '#4A4438',
+    'interactive-layer-on-solid-hover': 'rgba(23,22,19,0.12)',
+    'interactive-layer-on-solid-pressed': 'rgba(23,22,19,0.18)',
+    'interactive-layer-on-solid-soft-hover': 'rgba(23,22,19,0.16)',
+    'interactive-layer-on-solid-soft-pressed': 'rgba(23,22,19,0.10)',
+    'interactive-layer-darken-hover': 'rgba(23,22,19,0.9)',
+    'interactive-layer-darken-pressed': 'rgba(23,22,19,0.95)',
+    'interactive-layer-disabled': 'rgba(234,227,213,0.05)',
+    'interactive-content-accent-hover': '#8FB0D4',
+    'interactive-content-accent-pressed': '#8FB0D4',
+    'interactive-content-negative-hover': '#D9827A',
+    'interactive-content-negative-pressed': '#D9827A',
+    'interactive-content-positive-hover': '#85B394',
+    'interactive-content-positive-pressed': '#85B394',
+    'interactive-content-warning-hover': '#D6A960',
+    'interactive-content-warning-pressed': '#D6A960',
+    'interactive-content-secondary-hover': '#EAE3D5',
+    'interactive-content-secondary-pressed': '#A79D8B',
+    'interactive-content-disabled': '#A79D8B',
+    'interactive-content-on-solid-hover': 'rgba(23,22,19,0.8)',
+    'interactive-content-on-solid-pressed': 'rgba(23,22,19,0.6)',
+    'interactive-content-on-solid-disabled': 'rgba(23,22,19,0.6)',
+    'interactive-border-disabled': '#35312A',
+    'interactive-border-on-solid-disabled': 'rgba(23,22,19,0.6)'
+  };
+
+  var LM_SHADOWS = {
+    'shadow-bottom-xs': '0 1px 3px rgba(0,0,0,0.45)',
+    'shadow-bottom-s': '0 1px 4px rgba(0,0,0,0.45)',
+    'shadow-bottom-m': '0 2px 8px rgba(0,0,0,0.45)',
+    'shadow-bottom-l': '0 4px 12px rgba(0,0,0,0.45)',
+    'shadow-bottom-xl': '0 6px 18px rgba(0,0,0,0.5)',
+    'shadow-bottom-xxl': '0 8px 24px rgba(0,0,0,0.55)',
+    'shadow-top-xs': '0 -1px 3px rgba(0,0,0,0.45)',
+    'shadow-top-s': '0 -1px 4px rgba(0,0,0,0.45)',
+    'shadow-top-m': '0 -2px 8px rgba(0,0,0,0.45)',
+    'shadow-top-l': '0 -4px 12px rgba(0,0,0,0.45)',
+    'shadow-top-xl': '0 -6px 18px rgba(0,0,0,0.5)',
+    'shadow-top-xxl': '0 -8px 24px rgba(0,0,0,0.55)',
+    'shadow-left-xs': '-1px 0 3px rgba(0,0,0,0.45)',
+    'shadow-left-s': '-1px 0 4px rgba(0,0,0,0.45)',
+    'shadow-left-m': '-2px 0 8px rgba(0,0,0,0.45)',
+    'shadow-left-l': '-4px 0 12px rgba(0,0,0,0.45)',
+    'shadow-left-xl': '-6px 0 18px rgba(0,0,0,0.5)',
+    'shadow-left-xxl': '-8px 0 24px rgba(0,0,0,0.55)',
+    'shadow-right-xs': '1px 0 3px rgba(0,0,0,0.45)',
+    'shadow-right-s': '1px 0 4px rgba(0,0,0,0.45)',
+    'shadow-right-m': '2px 0 8px rgba(0,0,0,0.45)',
+    'shadow-right-l': '4px 0 12px rgba(0,0,0,0.45)',
+    'shadow-right-xl': '6px 0 18px rgba(0,0,0,0.5)',
+    'shadow-right-xxl': '8px 0 24px rgba(0,0,0,0.55)',
+    'shadow-inner-xs': 'inset 0 1px 3px rgba(0,0,0,0.4)',
+    'shadow-inner-s': 'inset 0 1px 4px rgba(0,0,0,0.45)',
+    'shadow-inner-m': 'inset 0 2px 5px rgba(0,0,0,0.5)'
+  };
+
+  // Цветные темы дизайн-системы: red/orange/green/blue/violet/... — каждая
+  // задаёт и заливку, и текст, и рамку. Сводим их к ролям палитры.
+  var LM_THEME_ROLE = {
+    neutral: '#A79D8B', asphalt: '#A79D8B',
+    red: '#D9827A', magenta: '#D9827A',
+    orange: '#D6A960', yellow: '#D6A960', 'yellow-alt': '#D6A960',
+    green: '#85B394', lime: '#85B394', teal: '#7FB8B8', cian: '#7FB8B8',
+    blue: '#8FB0D4', indigo: '#8FB0D4',
+    violet: '#B79BC4', grape: '#B79BC4'
+  };
+
+  function lmTheme() {
+    var out = {};
+    for (var name in LM_THEME_ROLE) {
+      if (!LM_THEME_ROLE.hasOwnProperty(name)) continue;
+      var c = LM_THEME_ROLE[name];
+      var soft = withAlpha(c, 0.20), subtler = withAlpha(c, 0.10);
+      out['theme-' + name + '-layer-solid'] = c;
+      out['theme-' + name + '-layer-solid-hover'] = c;
+      out['theme-' + name + '-layer-solid-pressed'] = c;
+      out['theme-' + name + '-layer-soft'] = soft;
+      out['theme-' + name + '-layer-soft-hover'] = withAlpha(c, 0.28);
+      out['theme-' + name + '-layer-soft-pressed'] = withAlpha(c, 0.34);
+      out['theme-' + name + '-layer-subtle'] = subtler;
+      out['theme-' + name + '-content'] = c;
+      out['theme-' + name + '-content-hover'] = c;
+      out['theme-' + name + '-content-pressed'] = c;
+      out['theme-' + name + '-content-on-soft'] = c;
+      out['theme-' + name + '-border-solid'] = withAlpha(c, 0.55);
+      out['theme-' + name + '-border-soft'] = withAlpha(c, 0.35);
+      out['theme-' + name + '-icon-solid'] = c;
+    }
+    return out;
+  }
+
+  function tokenDecls(prefix, map) {
+    var out = [];
+    for (var k in map) {
+      if (map.hasOwnProperty(k)) out.push(prefix + '-' + k + ':' + map[k] + ' !important');
+    }
+    return out.join(';');
+  }
+
+  function dsCss() {
+    var all = {};
+    var add = function (map) {
+      for (var k in map) if (map.hasOwnProperty(k)) all[k] = map[k];
+    };
+    add(LM_BASE);
+    add(LM_INTERACTIVE);
+    add(LM_SHADOWS);
+    add(lmTheme());
+    return 'html.sch-dark{' + tokenDecls('--LM', all) + '}';
+  }
+
+  // Токены шапки/меню (--MF-*): ещё одна семья, тоже светлая по умолчанию.
+  var MF_TOKENS = {
+    'Background': '#171613',
+    'Background-dark': '#171613',
+    'Background-blue': '#201E1A',
+    'Border': '#3E392F',
+    'Color': '#EAE3D5',
+    'Color-dark': '#EAE3D5',
+    'Color-Hover': '#8FB0D4',
+    'Color-Active': '#8FB0D4',
+    'Gray': '#A79D8B',
+    'Gray-Dark': '#A79D8B',
+    'Button-Hover': '#2A2721',
+    'Button-Active': '#2A2721',
+    'Border-Button': '#3E392F',
+    'Fill-Button': 'transparent',
+    'Color-Fill': '#201E1A',
+    'Color-Fill-App': '#171613'
+  };
+
+  function mfCss() {
+    return 'html.sch-dark{' + tokenDecls('--MF', MF_TOKENS) + '}';
+  }
 
   function tokenCss() {
     var decls = [];
@@ -402,6 +711,15 @@
     'html.sch-dark [class*="userbar" i] img[src*="logo" i],',
     'html.sch-dark [class*="userbar" i] [class*="logo" i]{',
     '  display:none !important;}',
+    // Логотип, найденный по расположению (шапка не всегда <header>).
+    // Двойной атрибут поднимает специфичность выше правил сайта: наши
+    // перекрашенные правила сайта идут позже базовых.
+    'html.sch-dark [data-sch-hide][data-sch-hide]{display:none !important;}',
+    // Плашка роли («УЧЕНИК», «УЧИТЕЛЬ»): на сайте её цвета зависят от
+    // цвета школы, и после перекраски текст оказывался тёмным на сиреневом.
+    'html.sch-dark [data-sch-role][data-sch-role]{',
+    '  background-color:rgba(143,176,212,0.165) !important;',
+    '  color:#8FB0D4 !important;border-color:#3E392F !important;}',
     // монохромные SVG-иконки: заливка чёрным по атрибуту
     'html.sch-dark svg [fill="#000"],html.sch-dark svg [fill="#000000"],',
     'html.sch-dark svg [fill="#212529"],html.sch-dark svg [fill="black"]{',
@@ -409,7 +727,7 @@
     'html.sch-dark svg [stroke="#000"],html.sch-dark svg [stroke="#000000"],',
     'html.sch-dark svg [stroke="#212529"],html.sch-dark svg [stroke="black"]{',
     '  stroke:currentColor !important;}'
-  ].join('') + tokenCss();
+  ].join('') + tokenCss() + mfCss() + dsCss();
 
   function addBase() {
     var doc = document;
@@ -493,6 +811,12 @@
     var border = parseColor(borderRaw);
     if (border) push('border-color', mapBorder(border, false), mapBorder(border, true));
 
+    var borderFix = borderFromVar(borderRaw, true);
+    if (borderFix) dark.push('border-color:' + borderFix + ' !important');
+
+    var shadow = mapShadow(style.getPropertyValue('box-shadow'), true);
+    if (shadow) dark.push('box-shadow:' + shadow + ' !important');
+
     var fill = parseColor(style.getPropertyValue('fill'));
     if (fill) push('fill', mapInk(fill, false), mapInk(fill, true));
 
@@ -507,7 +831,13 @@
       // Токены дизайн-системы МЭШ красим целиком своим блоком (TOKENS):
       // иначе их значения зависят от того, в каком порядке сайт объявил
       // переменные, и половина интерфейса остаётся светлой.
-      if (/^--(MH|NC)-/i.test(name)) continue;
+      if (/^--(MH|NC|MF)-/i.test(name)) continue;
+      if (/shadow/i.test(name)) {
+        var sm = mapShadow(style.getPropertyValue(name), true);
+        if (sm) dark.push(name + ':' + sm + ' !important');
+        continue;
+      }
+      if (/^--LM-/i.test(name)) continue;   // дизайн-система: свой блок DS_CSS
       var c = parseColor(style.getPropertyValue(name));
       if (!c) continue;
       var kind = customKind(name);
@@ -713,6 +1043,12 @@
       if (lbd) light.push('border-color:' + lbd + ' !important');
       if (dbd) dark.push('border-color:' + dbd + ' !important');
     }
+    var borderFix = borderFromVar(st.getPropertyValue('border-color') ||
+        st.getPropertyValue('border') || st.getPropertyValue('border-top'), true);
+    if (borderFix) dark.push('border-color:' + borderFix + ' !important');
+
+    var shadow = mapShadow(st.getPropertyValue('box-shadow'), true);
+    if (shadow) dark.push('box-shadow:' + shadow + ' !important');
 
     var fill = parseColor(st.getPropertyValue('fill'));
     if (fill) {
@@ -771,6 +1107,246 @@
     flush();
   }
 
+  // --- шапка: словесный знак «мэш» -----------------------------------------
+  // Сайт держит логотип не обязательно в <header>: это бывает <div> с
+  // хешированными классами. Ищем текст «мэш» в верхней части экрана и
+  // убираем его вместе с картинкой рядом. Картинки заданий не трогаем.
+  var hiddenNodes = [];
+
+  function unhideAll() {
+    for (var i = 0; i < hiddenNodes.length; i++) {
+      try { hiddenNodes[i].removeAttribute('data-sch-hide'); } catch (e) { }
+    }
+    hiddenNodes = [];
+  }
+
+  function hideNode(el) {
+    if (!el || el.getAttribute('data-sch-hide') === '1') return;
+    el.setAttribute('data-sch-hide', '1');
+    hiddenNodes.push(el);
+  }
+
+  function hideWordmark() {
+    var all;
+    try { all = document.querySelectorAll('p,span,div,a,strong,b,img'); } catch (e) { return; }
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var rect = null;
+      try { rect = el.getBoundingClientRect(); } catch (e) { }
+      var top = rect ? rect.top : 0;
+      var w = rect ? rect.width : 0;
+      var h = rect ? rect.height : 0;
+      // jsdom и ещё не отрисованные узлы отдают нули — это не повод
+      // отказываться от проверки, иначе тест ничего не увидит.
+      var unknown = !rect || (w === 0 && h === 0);
+      if (!unknown && (top > 170 || h > 150 || w > 460)) continue;
+
+      if (el.tagName === 'IMG') {
+        var src = el.getAttribute('src') || '';
+        if (/logo|мэш|mesh/i.test(src)) hideNode(el);
+        continue;
+      }
+      if (el.children.length) continue;
+      if (!/^(мэш|меш)$/i.test((el.textContent || '').trim())) continue;
+      hideNode(el);
+      var parent = el.parentElement;
+      if (!parent || parent === document.body) continue;
+      var pics = parent.querySelectorAll('img');
+      for (var j = 0; j < pics.length; j++) hideNode(pics[j]);
+    }
+  }
+
+  // --- плашка роли ---------------------------------------------------------
+  var ROLE_TEXT = /^(ученик|ученица|учитель|учительница|родитель|родительница|студент|студентка)$/i;
+
+  function roleBadges() {
+    var all;
+    try { all = document.querySelectorAll('span,div,p,a,b,strong,li'); } catch (e) { return; }
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var txt = '';
+      try { txt = (el.textContent || '').trim(); } catch (e) { continue; }
+      var match = !el.children.length && ROLE_TEXT.test(txt);
+      if (match && isDarkOn) {
+        if (el.getAttribute('data-sch-role') !== '1') el.setAttribute('data-sch-role', '1');
+      } else if (el.hasAttribute && el.hasAttribute('data-sch-role')) {
+        el.removeAttribute('data-sch-role');
+      }
+    }
+  }
+
+  // --- SVG, раскрашенные атрибутами fill/stroke ---------------------------
+  // Иконки и «уголки» рамок в ЦДЗ часто нарисованы атрибутами, а не CSS:
+  // такие заливки наш лист не перекрашивает и они остаются белыми.
+  var svgSaved = [];
+
+  function svgIsMono(svg) {
+    var nodes = [svg].concat(Array.prototype.slice.call(
+        svg.querySelectorAll('[fill],[stroke]')));
+    var colored = false, count = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      var attrs = ['fill', 'stroke'];
+      for (var a = 0; a < attrs.length; a++) {
+        var v = nodes[i].getAttribute && nodes[i].getAttribute(attrs[a]);
+        if (!v || v === 'none' || /^currentcolor$/i.test(v) || /^url\(/i.test(v)) continue;
+        var c = parseColor(v);
+        if (!c || c.a < 0.05) continue;
+        count++;
+        if (c.s > 0.35) colored = true;
+      }
+    }
+    return count > 0 && !colored;
+  }
+
+  function paintSvgs() {
+    var list;
+    try { list = document.querySelectorAll('svg'); } catch (e) { return; }
+    for (var i = 0; i < list.length; i++) {
+      var svg = list[i];
+      if (!svgIsMono(svg)) continue;
+      var nodes = [svg].concat(Array.prototype.slice.call(
+          svg.querySelectorAll('[fill],[stroke]')));
+      for (var n = 0; n < nodes.length; n++) {
+        var el = nodes[n];
+        for (var k = 0; k < 2; k++) {
+          var attr = k === 0 ? 'fill' : 'stroke';
+          var v = el.getAttribute(attr);
+          if (!v || v === 'none' || /^currentcolor$/i.test(v) || /^url\(/i.test(v)) continue;
+          var c = parseColor(v);
+          if (!c || c.a < 0.05 || !el.style || !el.style.setProperty) continue;
+          if (el.style.getPropertyValue(attr) === DARK.ink) continue;
+          svgSaved.push({
+            el: el, attr: attr, value: el.style.getPropertyValue(attr)
+          });
+          el.style.setProperty(attr, DARK.ink, 'important');
+        }
+      }
+    }
+  }
+
+  function unpaintSvgs() {
+    for (var i = 0; i < svgSaved.length; i++) {
+      try {
+        var it = svgSaved[i];
+        if (it.value) it.el.style.setProperty(it.attr, it.value);
+        else it.el.style.removeProperty(it.attr);
+      } catch (e) { }
+    }
+    svgSaved = [];
+  }
+
+  // --- отчёт о теме ---------------------------------------------------------
+  // Долгое нажатие на луну в окне ЦДЗ отдаёт список элементов, которые
+  // остались светлыми. Без этого приходилось угадывать по скриншотам.
+  function report() {
+    var out = {
+      version: VERSION,
+      dark: isDarkOn,
+      url: String(location.href || '').slice(0, 180),
+      size: [window.innerWidth || 0, window.innerHeight || 0],
+      ds: darkScope.slice(0, 6),
+      items: []
+    };
+    try {
+      var all = document.body.querySelectorAll('*');
+      for (var i = 0; i < all.length && out.items.length < 80; i++) {
+        var el = all[i];
+        if (el.id === BASE_ID || el.id === SITE_ID || el.id === DYN_ID) continue;
+        var st = null;
+        try { st = window.getComputedStyle(el); } catch (e) { continue; }
+        if (!st) continue;
+        var sus = [];
+        var bg = parseColor(st.backgroundColor);
+        if (bg && bg.a > 0.4 && bg.l > 0.62) sus.push('bg');
+        var fg = parseColor(st.color);
+        if (bg && bg.a > 0.4 && bg.l < 0.32 && fg && fg.a > 0.4 && fg.l < 0.4) {
+          sus.push('fg');
+        }
+        var bd = parseColor(st.borderTopColor);
+        if (bd && bd.a > 0.2 && bd.l > 0.55 &&
+            (parseFloat(st.borderTopWidth) || 0) > 0) sus.push('border');
+        var sh = st.boxShadow;
+        if (sh && sh !== 'none') {
+          var sc = sh.match(/rgba?\([^)]*\)/g) || [];
+          for (var j = 0; j < sc.length; j++) {
+            var shc = parseColor(sc[j]);
+            if (shc && shc.l > 0.55) { sus.push('shadow'); break; }
+          }
+        }
+        if (st.backgroundImage && /url\(/i.test(st.backgroundImage)) sus.push('bgimg');
+        if (el.tagName === 'IMG') sus.push('img');
+        if (el.tagName === 'SVG' || el.ownerSVGElement) {
+          var fv = el.getAttribute && el.getAttribute('fill');
+          var fc = fv ? parseColor(fv) : null;
+          if (fc && fc.l > 0.8) sus.push('svgfill');
+        }
+        if (!sus.length) continue;
+        var r = null;
+        try { r = el.getBoundingClientRect(); } catch (e) { }
+        out.items.push({
+          t: el.tagName.toLowerCase(),
+          c: String(el.getAttribute('class') || '').slice(0, 70),
+          r: r ? [Math.round(r.left), Math.round(r.top),
+                  Math.round(r.width), Math.round(r.height)] : [0, 0, 0, 0],
+          s: sus.join(','),
+          st: String(el.getAttribute('style') || '').slice(0, 120),
+          h: String(el.outerHTML || '').slice(0, 160)
+        });
+      }
+    } catch (e) { }
+    var text = JSON.stringify(out);
+    return text.length > 30000 ? text.slice(0, 30000) : text;
+  }
+
+  // --- тёмный набор дизайн-системы ----------------------------------------
+  // Ищем в таблицах стилей правило, где --LM-layer-background объявлен
+  // тёмным, и запоминаем его класс: он включает весь тёмный набор ЦДЗ.
+  var darkScope = [];
+
+  function findDarkScope() {
+    var scopes = [];
+    var visit = function (rules) {
+      if (!rules) return;
+      for (var i = 0; i < rules.length; i++) {
+        var r = rules[i];
+        try {
+          if (r.type === 1 && r.style && r.selectorText) {
+            var v = r.style.getPropertyValue('--LM-layer-background');
+            if (!v) continue;
+            var c = parseColor(v);
+            if (!c || c.l > 0.35) continue;
+            var parts = String(r.selectorText).split(',');
+            for (var p = 0; p < parts.length; p++) {
+              var one = parts[p].trim();
+              if (!/^\.[A-Za-z0-9_-]+$/.test(one)) continue;
+              var cls = one.slice(1);
+              if (scopes.indexOf(cls) < 0) scopes.push(cls);
+            }
+          } else if (r.type === 4 || r.type === 12) {
+            visit(r.cssRules);
+          }
+        } catch (e) { }
+      }
+    };
+    var list = document.styleSheets || [];
+    for (var i = 0; i < list.length; i++) {
+      try { if (list[i].cssRules) visit(list[i].cssRules); } catch (e) { }
+    }
+    return scopes;
+  }
+
+  function decorate() {
+    if (isDarkOn) {
+      hideWordmark();
+      roleBadges();
+      paintSvgs();
+    } else {
+      unhideAll();
+      roleBadges();
+      unpaintSvgs();
+    }
+  }
+
   // --- тема ----------------------------------------------------------------
 
   function applyClass(dark) {
@@ -778,6 +1354,14 @@
     if (!de) return;
     if (dark) de.classList.add('sch-dark');
     else de.classList.remove('sch-dark');
+    // Свой тёмный набор токенов дизайн-системы включается классом.
+    if (!darkScope.length) darkScope = findDarkScope();
+    for (var i = 0; i < darkScope.length && i < 4; i++) {
+      try {
+        if (dark) de.classList.add(darkScope[i]);
+        else de.classList.remove(darkScope[i]);
+      } catch (e) { }
+    }
   }
 
   function set(dark) {
@@ -794,6 +1378,7 @@
     scanSheets(false);
     applyClass(dark);
     queueAll();
+    decorate();
   }
 
   // --- наблюдатель ---------------------------------------------------------
@@ -806,6 +1391,7 @@
       rescanTimer = null;
       scanSheets(false);
       queueAll();
+      decorate();
     }, 120);
   }
 
@@ -814,6 +1400,7 @@
     scanSheets(true);
     applyClass(isDarkOn);
     queueAll();
+    decorate();
     dynStyle();
     try {
       var mo = new MutationObserver(function (muts) {
@@ -846,10 +1433,15 @@
     // Страховка: сайт иногда меняет <head> целиком или дописывает правила
     // в уже существующий <style> (CSS-in-JS).
     setTimeout(function () { scanSheets(false); queueAll(); }, 600);
+    var scopeTries = 0;
     setInterval(function () {
       if (!document.getElementById(BASE_ID)) addBase();
       if (!document.getElementById(SITE_ID)) rebuildSite();
+      // Стили дизайн-системы могут подгрузиться позже: пробуем найти их
+      // тёмный набор ещё несколько раз, но не бесконечно.
+      if (isDarkOn && !darkScope.length && scopeTries++ < 20) applyClass(true);
       scanSheets(false);
+      decorate();
     }, 2500);
   }
 
@@ -857,7 +1449,8 @@
     version: VERSION,
     set: set,
     isDark: function () { return isDarkOn; },
-    rescan: function () { scanSheets(true); queueAll(); }
+    rescan: function () { scanSheets(true); queueAll(); decorate(); },
+    report: report
   };
 
   if (document.readyState === 'loading') {
