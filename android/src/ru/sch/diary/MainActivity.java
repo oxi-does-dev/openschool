@@ -1509,19 +1509,7 @@ public final class MainActivity extends Activity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout views = chipStrip(page);
-        views.addView(hwViewChip("Актуальные", false));
-        views.addView(hwViewChip("Прошедшие", true));
-
-        LinearLayout periods = chipStrip(page);
-        periods.addView(hwPeriodChip("7 дней", 7));
-        periods.addView(hwPeriodChip("14 дней", 14));
-        periods.addView(hwPeriodChip("30 дней", 30));
-
-        LinearLayout filters = chipStrip(page);
-        filters.addView(hwFilterChip("Все", 0));
-        filters.addView(hwFilterChip("Не сделано", 1));
-        filters.addView(hwFilterChip("Сделано", 2));
+        page.addView(hwFilterBar());
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -1566,62 +1554,115 @@ public final class MainActivity extends Activity {
         return page;
     }
 
-    private View hwViewChip(String label, final boolean past) {
-        boolean sel = hwPast == past;
-        TextView t = tv(label, 13, sel ? ON_ACCENT : TEXT, sel);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(16), dp(8), dp(16), dp(8));
-        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
-                : roundBg(SURFACE, 3, STROKE));
-        tappableChip(t);
-        t.setClickable(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(8);
-        t.setLayoutParams(lp);
-        t.setOnClickListener(new View.OnClickListener() {
+    // Три фильтра ДЗ — в одну строку: три ряда чипов занимали пол-экрана.
+    private View hwFilterBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setPadding(dp(12), dp(4), dp(12), dp(8));
+
+        final TextView viewBtn = hwDropdownButton(
+                hwPast ? "Прошедшие" : "Актуальные");
+        final TextView daysBtn = hwDropdownButton(hwDays + " дней");
+        final TextView filterBtn = hwDropdownButton(hwFilter == 1 ? "Не сделано"
+                : hwFilter == 2 ? "Сделано" : "Все");
+
+        viewBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                if (hwPast == past) return;
-                hwPast = past;
-                hwData = null;
-                hwFrom = null;
-                hwTo = null;
-                hwError = null;
-                hwAuth = false;
-                hwScrollY = 0;
-                renderTab();
-                fetchHw(true);
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Показывать задания")
+                        .setSingleChoiceItems(
+                                new String[]{"Актуальные", "Прошедшие"},
+                                hwPast ? 1 : 0,
+                                new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface d, int which) {
+                                d.dismiss();
+                                boolean past = which == 1;
+                                if (hwPast == past) return;
+                                hwPast = past;
+                                hwData = null;
+                                hwFrom = null;
+                                hwTo = null;
+                                hwError = null;
+                                hwAuth = false;
+                                hwScrollY = 0;
+                                fetchHw(true);
+                            }
+                        })
+                        .setNegativeButton("Отмена", null)
+                        .show();
             }
         });
-        return t;
+
+        daysBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                final int[] values = {7, 14, 30};
+                String[] labels = {"7 дней", "14 дней", "30 дней"};
+                int checked = hwDays == 7 ? 0 : hwDays == 30 ? 2 : 1;
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Период")
+                        .setSingleChoiceItems(labels, checked,
+                                new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface d, int which) {
+                                d.dismiss();
+                                int days = values[which];
+                                if (hwDays == days) return;
+                                hwDays = days;
+                                prefs.edit().putInt("hwDays", days).apply();
+                                hwData = null;
+                                hwError = null;
+                                hwAuth = false;
+                                hwScrollY = 0;
+                                fetchHw(true);
+                            }
+                        })
+                        .setNegativeButton("Отмена", null)
+                        .show();
+            }
+        });
+
+        filterBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Отметка")
+                        .setSingleChoiceItems(
+                                new String[]{"Все", "Не сделано", "Сделано"},
+                                hwFilter,
+                                new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface d, int which) {
+                                d.dismiss();
+                                if (hwFilter == which) return;
+                                hwFilter = which;
+                                prefs.edit().putInt("hwFilter", which).apply();
+                                hwScrollY = 0;
+                                renderTab();
+                            }
+                        })
+                        .setNegativeButton("Отмена", null)
+                        .show();
+            }
+        });
+
+        TextView[] buttons = {viewBtn, daysBtn, filterBtn};
+        for (int i = 0; i < buttons.length; i++) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) lp.leftMargin = dp(6);
+            bar.addView(buttons[i], lp);
+        }
+        return bar;
     }
 
-    private View hwPeriodChip(String label, final int days) {
-        boolean sel = hwDays == days;
-        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
+    private TextView hwDropdownButton(String label) {
+        TextView t = tv(label + "  ▾", 11, TEXT, false);
         t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(14), dp(7), dp(14), dp(7));
-        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
-                : roundBg(SURFACE, 3, STROKE));
-        tappableChip(t);
+        t.setSingleLine(true);
+        t.setMaxLines(1);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        t.setMinHeight(dp(40));
+        t.setPadding(dp(8), dp(9), dp(8), dp(9));
+        t.setBackground(roundBg(SURFACE, 3, STROKE));
         t.setClickable(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(8);
-        t.setLayoutParams(lp);
-        t.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                if (hwDays == days) return;
-                hwDays = days;
-                prefs.edit().putInt("hwDays", days).apply();
-                hwData = null;
-                hwError = null;
-                hwAuth = false;
-                hwScrollY = 0;
-                renderTab();
-                fetchHw(true);
-            }
-        });
+        t.setContentDescription(label + ": нажмите, чтобы выбрать");
         return t;
     }
 
@@ -1686,30 +1727,6 @@ public final class MainActivity extends Activity {
         return true;
     }
 
-    private View hwFilterChip(String label, final int filter) {
-        boolean sel = hwFilter == filter;
-        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(14), dp(7), dp(14), dp(7));
-        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
-                : roundBg(SURFACE, 3, STROKE));
-        tappableChip(t);
-        t.setClickable(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(8);
-        t.setLayoutParams(lp);
-        t.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                if (hwFilter == filter) return;
-                hwFilter = filter;
-                prefs.edit().putInt("hwFilter", filter).apply();
-                hwScrollY = 0;
-                renderTab();
-            }
-        });
-        return t;
-    }
 
     // ------------------------------------------------------------- отметки о ДЗ
 
@@ -8290,7 +8307,9 @@ public final class MainActivity extends Activity {
                         + "2.7: вкладка «Итоги» — средний балл с учётом веса, качество "
                         + "и успеваемость, распределение оценок, динамика, статистика "
                         + "по предметам, калькулятор «что нужно до 3/4/5» и чек-лист "
-                        + "домашнего задания.")
+                        + "домашнего задания.\n\n"
+                        + "2.8: фильтры домашнего задания — в одной строке, тремя "
+                        + "выпадающими списками.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
