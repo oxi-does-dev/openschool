@@ -387,7 +387,7 @@ public final class MainActivity extends Activity {
     private ImageView refreshBtn;
 
     private static final int TAB_DAY = 0, TAB_WEEK = 1, TAB_HW = 2,
-            TAB_MARKS = 3, TAB_MORE = 4;
+            TAB_MARKS = 3, TAB_STATS = 4, TAB_MORE = 5;
     private int tab;
 
     private String currentDate;
@@ -431,6 +431,32 @@ public final class MainActivity extends Activity {
     private int hwGen;
     private int hwDays = 14;
     private boolean hwPast;
+    // Статистика: отдельный набор данных, чтобы период на «Итогах»
+    // не зависел от периода на вкладке оценок.
+    private JSONArray statsMarks;
+    private JSONArray statsHw;
+    private String statsMarksFrom;
+    private String statsMarksTo;
+    private String statsHwFrom;
+    private String statsHwTo;
+    private boolean statsLoading;
+    private boolean statsAuth;
+    private Exception statsMarksError;
+    private Exception statsHwError;
+    private int statsGen;
+    private int statsDays = 30;
+    private String statsSubject = "";
+    private int statsTarget = 5;
+    private int statsFuture = 3;
+    private ScrollView statsScroll;
+    private int statsScrollY;
+    private View statsCalcAnchor;
+    private boolean statsScrollToCalc;
+
+    private int hwFilter;              // 0 всё, 1 не сделано, 2 сделано
+    private ScrollView hwScroll;
+    private int hwScrollY;
+
     private JSONArray ratingData;
     private JSONObject overallRank;
     private boolean overallTried;
@@ -518,6 +544,11 @@ public final class MainActivity extends Activity {
 
         marksDays = prefs.getInt("marksDays", 14);
         hwDays = prefs.getInt("hwDays", 14);
+        statsDays = prefs.getInt("statsDays", 30);
+        statsTarget = prefs.getInt("statsTarget", 5);
+        statsFuture = prefs.getInt("statsFuture", 3);
+        statsSubject = prefs.getString("statsSubject", "");
+        hwFilter = prefs.getInt("hwFilter", 0);
         selectedChildId = prefs.getString("child_id", "");
         selectedChildPerson = prefs.getString("child_person", "");
         Api.selectStudent(selectedChildId, selectedChildPerson);
@@ -571,6 +602,8 @@ public final class MainActivity extends Activity {
             if (marksView == 0) fetchMarks(force);
             else if (marksView == 1) fetchRating(force);
             else fetchFinal(force);
+        } else if (tab == TAB_STATS) {
+            fetchStats(force);
         } else {
             fetchProfile(false);
         }
@@ -666,6 +699,7 @@ public final class MainActivity extends Activity {
                 else if (tab == TAB_WEEK) fetchWeek(true);
                 else if (tab == TAB_HW) fetchHw(true);
                 else if (tab == TAB_MARKS) fetchMarks(true);
+                else if (tab == TAB_STATS) fetchStats(true);
                 else fetchProfile(true);
             }
         });
@@ -709,6 +743,7 @@ public final class MainActivity extends Activity {
         navBar.addView(navItem(R.drawable.ic_week, "Неделя", TAB_WEEK));
         navBar.addView(navItem(R.drawable.ic_homework, "ДЗ", TAB_HW));
         navBar.addView(navItem(R.drawable.ic_star, "Оценки", TAB_MARKS));
+        navBar.addView(navItem(R.drawable.ic_stats, "Итоги", TAB_STATS));
         navBar.addView(navItem(R.drawable.ic_more, "Ещё", TAB_MORE));
     }
 
@@ -772,6 +807,9 @@ public final class MainActivity extends Activity {
         } else if (tab == TAB_MARKS) {
             appTitle.setText("Оценки");
             appSub.setText("за последние " + marksDays + " дней");
+        } else if (tab == TAB_STATS) {
+            appTitle.setText("Итоги");
+            appSub.setText(statsPeriodLabel() + " · оценки и домашнее задание");
         } else {
             appTitle.setText("Ещё");
             String sub = studentClass.isEmpty() ? "МЭШ" : studentClass;
@@ -802,6 +840,12 @@ public final class MainActivity extends Activity {
             host.addView(buildMarks());
             if (marksData == null && marksError == null && !marksAuth && !marksLoading) {
                 fetchMarks(false);
+            }
+        } else if (tab == TAB_STATS) {
+            host.addView(buildStats());
+            if (statsMarks == null && statsHw == null && statsMarksError == null
+                    && statsHwError == null && !statsAuth && !statsLoading) {
+                fetchStats(false);
             }
         } else {
             host.addView(buildMore());
@@ -1365,10 +1409,14 @@ public final class MainActivity extends Activity {
         head.addView(s, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        if (Api.b(h, "done")) {
-            ImageView check = icon(R.drawable.ic_check, GREEN, 16);
-            head.addView(check);
-        }
+        head.addView(hwDoneBox(h, new Runnable() {
+            @Override public void run() {
+                if (tab == TAB_HW) {
+                    if (hwScroll != null) hwScrollY = hwScroll.getScrollY();
+                    renderTab();
+                }
+            }
+        }), new LinearLayout.LayoutParams(dp(28), dp(28)));
         card.addView(head);
 
         String text = Api.s(h, "text").trim();
@@ -1470,9 +1518,23 @@ public final class MainActivity extends Activity {
         periods.addView(hwPeriodChip("14 дней", 14));
         periods.addView(hwPeriodChip("30 дней", 30));
 
+        LinearLayout filters = chipStrip(page);
+        filters.addView(hwFilterChip("Все", 0));
+        filters.addView(hwFilterChip("Не сделано", 1));
+        filters.addView(hwFilterChip("Сделано", 2));
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
+        hwScroll = scroll;
+        scroll.setOnScrollChangeListener(new View.OnScrollChangeListener() {
+            @Override public void onScrollChange(View v, int x, int y, int ox, int oy) {
+                hwScrollY = y;
+            }
+        });
+        scroll.post(new Runnable() {
+            @Override public void run() { scrollToSaved(hwScroll, hwScrollY); }
+        });
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -1526,6 +1588,7 @@ public final class MainActivity extends Activity {
                 hwTo = null;
                 hwError = null;
                 hwAuth = false;
+                hwScrollY = 0;
                 renderTab();
                 fetchHw(true);
             }
@@ -1554,6 +1617,7 @@ public final class MainActivity extends Activity {
                 hwData = null;
                 hwError = null;
                 hwAuth = false;
+                hwScrollY = 0;
                 renderTab();
                 fetchHw(true);
             }
@@ -1580,20 +1644,205 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        String lastDate = null;
+        content.addView(hwProgressCard(items));
+
+        JSONArray shown = new JSONArray();
         for (int i = 0; i < items.length(); i++) {
             JSONObject h = items.optJSONObject(i);
+            if (h != null && hwMatchesFilter(h)) shown.put(h);
+        }
+        if (shown.length() == 0) {
+            if (hwFilter == 1) {
+                content.addView(emptyCard("Всё сделано",
+                        "Среди этих заданий невыполненных нет"));
+            } else if (hwFilter == 2) {
+                content.addView(emptyCard("Пока ничего не отмечено",
+                        "Нажми на квадрат в карточке задания"));
+            } else {
+                content.addView(emptyCard("Пусто", "Заданий за этот период нет"));
+            }
+            return;
+        }
+
+        String lastDate = null;
+        for (int i = 0; i < shown.length(); i++) {
+            JSONObject h = shown.optJSONObject(i);
             if (h == null) continue;
             String date = Api.s(h, "date");
             if (!date.equals(lastDate)) {
                 lastDate = date;
-                int n = countOnDate(items, date);
+                int n = countOnDate(shown, date);
                 content.addView(sectionHeader(
                         hwDateLabel(date).toUpperCase(Locale.ROOT)
                                 + (n > 0 ? "  ·  " + n : ""), 0));
             }
             content.addView(homeworkCard(h));
         }
+    }
+
+    private boolean hwMatchesFilter(JSONObject h) {
+        if (hwFilter == 1) return !hwDone(h);
+        if (hwFilter == 2) return hwDone(h);
+        return true;
+    }
+
+    private View hwFilterChip(String label, final int filter) {
+        boolean sel = hwFilter == filter;
+        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(14), dp(7), dp(14), dp(7));
+        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
+                : roundBg(SURFACE, 3, STROKE));
+        tappableChip(t);
+        t.setClickable(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = dp(8);
+        t.setLayoutParams(lp);
+        t.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (hwFilter == filter) return;
+                hwFilter = filter;
+                prefs.edit().putInt("hwFilter", filter).apply();
+                hwScrollY = 0;
+                renderTab();
+            }
+        });
+        return t;
+    }
+
+    // ------------------------------------------------------------- отметки о ДЗ
+
+    // В МЭШ есть is_done, но он обновляется не всегда и не для всех типов
+    // заданий. Поэтому галочка — локальная: она хранится на телефоне и
+    // перекрывает ответ школы.
+    private String hwDoneKey(JSONObject h) {
+        String id = Api.s(h, "entry");
+        if (id.isEmpty()) id = Integer.toHexString(Api.s(h, "text").hashCode());
+        return Api.s(h, "date") + "|" + Api.s(h, "subject") + "|"
+                + Api.s(h, "lesson_time") + "|" + id;
+    }
+
+    private boolean hwDone(JSONObject h) {
+        String key = "hwdone:" + hwDoneKey(h);
+        if (prefs.contains(key)) return prefs.getBoolean(key, false);
+        return Api.b(h, "done");
+    }
+
+    private boolean hwToggleDone(JSONObject h) {
+        String key = "hwdone:" + hwDoneKey(h);
+        boolean done = !hwDone(h);
+        prefs.edit().putBoolean(key, done).apply();
+        return done;
+    }
+
+    private View hwDoneBox(final JSONObject h, final Runnable after) {
+        final FrameLayout box = new FrameLayout(this);
+        box.setClickable(true);
+        box.setFocusable(true);
+        final ImageView check = new ImageView(this);
+        check.setImageResource(R.drawable.ic_check);
+        check.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        check.setPadding(dp(5), dp(5), dp(5), dp(5));
+        box.addView(check, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        final Runnable paint = new Runnable() {
+            @Override public void run() {
+                boolean done = hwDone(h);
+                box.setBackground(roundBg(done ? soft(GREEN) : SURFACE2, 4,
+                        done ? GREEN : STROKE));
+                check.setColorFilter(done ? GREEN : 0x00000000);
+                box.setContentDescription(done ? "Сделано" : "Не сделано");
+            }
+        };
+        paint.run();
+
+        box.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                hwToggleDone(h);
+                paint.run();
+                if (after != null) after.run();
+            }
+        });
+        return box;
+    }
+
+    private View hwProgressCard(JSONArray items) {
+        int total = 0, done = 0, overdue = 0, todayLeft = 0, tomorrowLeft = 0;
+        String today = today();
+        String tomorrow = shiftDate(today, 1);
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject h = items.optJSONObject(i);
+            if (h == null) continue;
+            total++;
+            String date = Api.s(h, "date");
+            if (hwDone(h)) {
+                done++;
+            } else {
+                if (date.compareTo(today) < 0) overdue++;
+                else if (date.equals(today)) todayLeft++;
+                else if (date.equals(tomorrow)) tomorrowLeft++;
+            }
+        }
+        int left = total - done;
+        int percent = total > 0 ? Math.round(done * 100f / total) : 0;
+        int color = percent >= 80 ? GREEN : percent >= 50 ? AMBER : RED;
+
+        LinearLayout card = card(SURFACE);
+        card.setPadding(dp(16), dp(13), dp(16), dp(13));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(tv("Сделано", 14, TEXT, true),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView val = tv(done + " / " + total, 18, color, true);
+        top.addView(val);
+        card.addView(top);
+
+        card.addView(percentBar(percent, color));
+        TextView pct = tv(percent + "%" + (left > 0
+                ? "  ·  осталось " + left : "  ·  всё готово"), 11, MUTED, false);
+        pct.setPadding(0, dp(2), 0, dp(6));
+        card.addView(pct);
+
+        java.util.List<View> tags = new java.util.ArrayList<>();
+        if (overdue > 0) {
+            tags.add(tag("просрочено " + overdue, RED, soft(RED)));
+        }
+        if (todayLeft > 0) {
+            tags.add(tag("сегодня " + todayLeft, ACCENT, soft(ACCENT)));
+        }
+        if (tomorrowLeft > 0) {
+            tags.add(tag("завтра " + tomorrowLeft, ACCENT, soft(ACCENT)));
+        }
+        if (left > 0) {
+            tags.add(tag("не сделано " + left, AMBER, soft(AMBER)));
+        } else {
+            tags.add(tag("всё сделано", GREEN, soft(GREEN)));
+        }
+        card.addView(chipFlow(tags));
+        return card;
+    }
+
+    private View percentBar(int percent, int color) {
+        ProgressBar pb = new ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
+        pb.setMax(100);
+        pb.setProgress(Math.max(0, Math.min(100, percent)));
+        pb.setProgressTintList(ColorStateList.valueOf(color));
+        pb.setProgressBackgroundTintList(ColorStateList.valueOf(SURFACE2));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(7));
+        lp.topMargin = dp(8);
+        pb.setLayoutParams(lp);
+        return pb;
+    }
+
+    private void scrollToSaved(ScrollView sv, int y) {
+        if (sv != null) sv.scrollTo(0, Math.max(0, y));
     }
 
     private int countOnDate(JSONArray items, String date) {
@@ -4748,6 +4997,1062 @@ public final class MainActivity extends Activity {
         return pb;
     }
 
+    // ------------------------------------------------------------- итоги
+
+    private String statsPeriodLabel() {
+        if (statsDays <= 0) return "учебный год";
+        return statsDays + " дней";
+    }
+
+    private String statsMarksFromDate() {
+        String to = today();
+        return statsDays <= 0 ? academicStart(to) : shiftDate(to, -(statsDays - 1));
+    }
+
+    private View buildStats() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout periods = chipStrip(page);
+        periods.addView(statsPeriodChip("30 дней", 30));
+        periods.addView(statsPeriodChip("90 дней", 90));
+        periods.addView(statsPeriodChip("Учебный год", 0));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
+        statsScroll = scroll;
+        scroll.setOnScrollChangeListener(new View.OnScrollChangeListener() {
+            @Override public void onScrollChange(View v, int x, int y, int ox, int oy) {
+                statsScrollY = y;
+            }
+        });
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(2), dp(12), dp(28));
+
+        if (statsMarks == null && statsHw == null) {
+            if (statsAuth) {
+                content.addView(authCard("Нужен вход в МЭШ",
+                        "Чтобы посчитать статистику, войдите в школу заново."));
+            } else if (statsMarksError != null || statsHwError != null) {
+                Exception e = statsMarksError != null ? statsMarksError : statsHwError;
+                content.addView(errorCard(e, new Runnable() {
+                    @Override public void run() { fetchStats(true); }
+                }));
+            } else {
+                content.addView(skeletonMarks());
+                if (!statsLoading) fetchStats(false);
+            }
+        } else {
+            if (statsAuth) content.addView(authBanner());
+            if (!statsLoading && (statsMarksError != null || statsHwError != null)) {
+                TextView stale = tv("Не удалось обновить — показаны "
+                        + "сохранённые данные", 11, MUTED, false);
+                stale.setPadding(dp(4), 0, dp(4), dp(8));
+                content.addView(stale);
+            }
+
+            if (statsMarks != null) {
+                Map<String, SubjectStat> map = collectSubjectStats(statsMarks);
+                SubjectStat all = map.get("Все предметы");
+                if (all != null && all.scored() > 0) {
+                    content.addView(sectionHeader("СВОДКА", 0));
+                    content.addView(gradeSummaryCard(all, statsMarks, map.size() - 1));
+                    content.addView(metricRow(
+                            metricTile("Качество", all.quality() + "%",
+                                    "оценок на 4 и 5", all.qualityColor()),
+                            metricTile("Успеваемость", all.success() + "%",
+                                    "оценок без двоек", all.successColor())));
+                    View calc = statsCalculatorCard(map);
+                    statsCalcAnchor = calc;
+                    content.addView(calc);
+                    content.addView(subjectsCard(map));
+                } else {
+                    content.addView(emptyCard("Оценок нет",
+                            "За выбранный период оценок не было"));
+                }
+            } else if (statsMarksError != null) {
+                content.addView(errorCard(statsMarksError, new Runnable() {
+                    @Override public void run() { fetchStats(true); }
+                }));
+            }
+
+            if (statsHw != null) {
+                renderHwStats(content, statsHw);
+            } else if (statsHwError != null) {
+                content.addView(errorCard(statsHwError, new Runnable() {
+                    @Override public void run() { fetchStats(true); }
+                }));
+            }
+
+            TextView note = tv("Средний балл считается с учётом веса оценок. "
+                    + "Итоговая — по школьному округлению: 4,5 → 5, 3,5 → 4. "
+                    + "В калькуляторе будущие оценки считаются с весом 1. "
+                    + "Отметки о домашнем задании хранятся только на этом телефоне "
+                    + "и в МЭШ не отправляются.", 11, MUTED, false);
+            LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            nlp.topMargin = dp(10);
+            content.addView(note, nlp);
+        }
+
+        scroll.addView(content);
+        page.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        final boolean toCalc = statsScrollToCalc;
+        statsScrollToCalc = false;
+        scroll.post(new Runnable() {
+            @Override public void run() {
+                if (toCalc && statsCalcAnchor != null) {
+                    statsScrollY = statsCalcAnchor.getTop();
+                    statsScroll.scrollTo(0, statsScrollY);
+                } else {
+                    scrollToSaved(statsScroll, statsScrollY);
+                }
+            }
+        });
+        return page;
+    }
+
+    private View statsPeriodChip(String label, final int days) {
+        boolean sel = statsDays == days;
+        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
+        t.setPadding(dp(14), dp(7), dp(14), dp(7));
+        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
+                : roundBg(SURFACE, 3, STROKE));
+        tappableChip(t);
+        t.setClickable(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = dp(8);
+        t.setLayoutParams(lp);
+        t.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (statsDays == days) return;
+                statsDays = days;
+                prefs.edit().putInt("statsDays", days).apply();
+                statsMarks = null;
+                statsHw = null;
+                statsMarksError = null;
+                statsHwError = null;
+                statsAuth = false;
+                statsLoading = false;   // старый запрос станет неактуальным
+                statsScrollY = 0;
+                renderTab();
+            }
+        });
+        return t;
+    }
+
+    private void fetchStats(boolean force) {
+        if (statsLoading && !force) return;
+        final int gen = ++statsGen;
+        statsLoading = true;
+        statsAuth = false;
+        statsMarksError = null;
+        statsHwError = null;
+
+        final String mFrom = statsMarksFromDate();
+        final String mTo = today();
+        final String hFrom = shiftDate(today(), -30);
+        final String hTo = shiftDate(today(), 14);
+
+        if (!force) {
+            String raw = prefs.getString("statsm2:" + mFrom + ":" + mTo, null);
+            if (raw != null) {
+                try {
+                    statsMarks = new JSONArray(raw);
+                    statsMarksFrom = mFrom;
+                    statsMarksTo = mTo;
+                } catch (Exception ignored) {
+                }
+            }
+            raw = prefs.getString("statshw2:" + hFrom + ":" + hTo, null);
+            if (raw != null) {
+                try {
+                    statsHw = new JSONArray(raw);
+                    statsHwFrom = hFrom;
+                    statsHwTo = hTo;
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        if (tab == TAB_STATS) renderTab();
+        if (exec.isShutdown()) return;
+
+        exec.execute(new Runnable() {
+            @Override public void run() {
+                JSONArray marks = null;
+                JSONArray hw = null;
+                Exception me = null;
+                Exception he = null;
+                boolean auth = false;
+                try {
+                    Api api = Api.fromCookies();
+                    try {
+                        marks = api.marks(mFrom, mTo);
+                        cachePut("statsm2:" + mFrom + ":" + mTo, marks.toString());
+                    } catch (Api.AuthException e) {
+                        auth = true;
+                        me = e;
+                    } catch (Exception e) {
+                        me = e;
+                    }
+                    try {
+                        hw = api.homeworksRange(hFrom, hTo);
+                        cachePut("statshw2:" + hFrom + ":" + hTo, hw.toString());
+                    } catch (Api.AuthException e) {
+                        auth = true;
+                        he = e;
+                    } catch (Exception e) {
+                        he = e;
+                    }
+                } catch (Api.AuthException e) {
+                    auth = true;
+                    me = e;
+                    he = e;
+                } catch (Exception e) {
+                    me = e;
+                    he = e;
+                }
+
+                final JSONArray fMarks = marks;
+                final JSONArray fHw = hw;
+                final Exception fMe = me;
+                final Exception fHe = he;
+                final boolean fAuth = auth;
+                ui.post(new Runnable() {
+                    @Override public void run() {
+                        if (gen != statsGen) return;
+                        statsLoading = false;
+                        statsAuth = fAuth;
+                        statsMarksError = fMe;
+                        statsHwError = fHe;
+                        if (fMarks != null) {
+                            statsMarks = fMarks;
+                            statsMarksFrom = mFrom;
+                            statsMarksTo = mTo;
+                        }
+                        if (fHw != null) {
+                            statsHw = fHw;
+                            statsHwFrom = hFrom;
+                            statsHwTo = hTo;
+                        }
+                        if (tab == TAB_STATS) renderTab();
+                    }
+                });
+            }
+        });
+    }
+
+    private final class SubjectStat {
+        String name = "";
+        int n5, n4, n3, n2, other, count;
+        double sum, weight;
+
+        double avg() {
+            return weight > 0 ? sum / weight : 0;
+        }
+
+        int scored() {
+            return count - other;
+        }
+
+        int quality() {
+            int n = scored();
+            return n > 0 ? Math.round((n4 + n5) * 100f / n) : 0;
+        }
+
+        int success() {
+            int n = scored();
+            return n > 0 ? Math.round((n - n2) * 100f / n) : 0;
+        }
+
+        int qualityColor() {
+            int q = quality();
+            return q >= 75 ? GREEN : q >= 50 ? AMBER : RED;
+        }
+
+        int successColor() {
+            int s = success();
+            return s >= 90 ? GREEN : s >= 70 ? AMBER : RED;
+        }
+    }
+
+    private static double numericMark(String value) {
+        if (value == null) return 0;
+        String v = value.trim().replace(',', '.');
+        try {
+            double d = Double.parseDouble(v);
+            if (d >= 1 && d <= 5) return d;
+        } catch (Exception ignored) {
+        }
+        for (int i = 0; i < v.length(); i++) {
+            char c = v.charAt(i);
+            if (c >= '2' && c <= '5') return c - '0';
+        }
+        return 0;
+    }
+
+    private void addMark(SubjectStat st, double v, int weight) {
+        st.count++;
+        if (v <= 0) {
+            st.other++;
+            return;
+        }
+        st.sum += v * weight;
+        st.weight += weight;
+        int g = (int) Math.round(v);
+        if (g == 5) st.n5++;
+        else if (g == 4) st.n4++;
+        else if (g == 3) st.n3++;
+        else st.n2++;
+    }
+
+    private Map<String, SubjectStat> collectSubjectStats(JSONArray items) {
+        Map<String, SubjectStat> map = new LinkedHashMap<>();
+        SubjectStat all = new SubjectStat();
+        all.name = "Все предметы";
+        map.put(all.name, all);
+
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject m = items.optJSONObject(i);
+            if (m == null) continue;
+            String name = cleanSubjectName(Api.s(m, "subject_name"));
+            if (name.isEmpty()) name = "Без предмета";
+            SubjectStat st = map.get(name);
+            if (st == null) {
+                st = new SubjectStat();
+                st.name = name;
+                map.put(name, st);
+            }
+            int w = m.optInt("weight", 1);
+            if (w <= 0) w = 1;
+            double v = numericMark(Api.s(m, "value"));
+            addMark(st, v, w);
+            // Повторяем счётчики в общую сумму, не пересчитывая заново.
+            all.count++;
+            if (v <= 0) {
+                all.other++;
+            } else {
+                all.sum += v * w;
+                all.weight += w;
+                int g = (int) Math.round(v);
+                if (g == 5) all.n5++;
+                else if (g == 4) all.n4++;
+                else if (g == 3) all.n3++;
+                else all.n2++;
+            }
+        }
+        return map;
+    }
+
+    private int[] halfAverages(JSONArray items) {
+        List<JSONObject> list = new ArrayList<>();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject m = items.optJSONObject(i);
+            if (m != null && numericMark(Api.s(m, "value")) > 0) list.add(m);
+        }
+        if (list.size() < 4) return null;
+        Collections.sort(list, new Comparator<JSONObject>() {
+            @Override public int compare(JSONObject a, JSONObject b) {
+                return Api.s(a, "date").compareTo(Api.s(b, "date"));
+            }
+        });
+        int mid = list.size() / 2;
+        double s1 = 0, w1 = 0, s2 = 0, w2 = 0;
+        for (int i = 0; i < list.size(); i++) {
+            JSONObject m = list.get(i);
+            int w = Math.max(1, m.optInt("weight", 1));
+            double v = numericMark(Api.s(m, "value"));
+            if (i < mid) {
+                s1 += v * w;
+                w1 += w;
+            } else {
+                s2 += v * w;
+                w2 += w;
+            }
+        }
+        if (w1 <= 0 || w2 <= 0) return null;
+        return new int[]{Math.round((float) (s1 / w1 * 100)),
+                Math.round((float) (s2 / w2 * 100))};
+    }
+
+    private View gradeSummaryCard(SubjectStat all, JSONArray items, int subjects) {
+        double avg = all.avg();
+        int color = avg >= 4.5 ? GREEN : avg >= 3.5 ? AMBER : RED;
+
+        LinearLayout card = card(SURFACE);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        TextView big = tv(String.format(Locale.US, "%.2f", avg), 32, color, true);
+        big.setSingleLine(true);
+        left.addView(big);
+        TextView cap = tv("средний балл", 10, MUTED, false);
+        left.addView(cap);
+        top.addView(left, new LinearLayout.LayoutParams(
+                Math.max(dp(96), textColWidth(big, cap)),
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        right.setGravity(Gravity.END);
+        TextView grade = tv("выйдет " + Stats.gradeOf(avg), 15, color, true);
+        grade.setGravity(Gravity.END);
+        right.addView(grade);
+        TextView meta = tv(all.count + " " + plural(all.count,
+                "оценка", "оценки", "оценок") + " · " + subjects + " "
+                + plural(subjects, "предмет", "предмета", "предметов"),
+                10, MUTED, false);
+        meta.setGravity(Gravity.END);
+        right.addView(meta);
+        if (all.other > 0) {
+            TextView o = tv("ещё " + all.other + " без балла", 10, MUTED, false);
+            o.setGravity(Gravity.END);
+            right.addView(o);
+        }
+        top.addView(right, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        card.addView(top);
+        card.addView(markBar(avg, color));
+
+        int[] halves = halfAverages(items);
+        if (halves != null && halves[0] != halves[1]) {
+            int delta = halves[1] - halves[0];
+            String txt = (delta > 0 ? "↑ +" : "↓ ")
+                    + String.format(Locale.US, "%.2f", Math.abs(delta / 100.0))
+                    + " за период";
+            TextView tr = tv(txt, 11, delta > 0 ? GREEN : RED, false);
+            tr.setPadding(0, dp(5), 0, 0);
+            card.addView(tr);
+        }
+
+        TextView dh = tv("Распределение", 10, MUTED, true);
+        dh.setLetterSpacing(0.06f);
+        dh.setPadding(0, dp(12), 0, dp(2));
+        card.addView(dh);
+        int scored = Math.max(0, all.scored());
+        int total = Math.max(1, scored);
+        card.addView(distRow("5", all.n5, scored, pct(all.n5, total)));
+        card.addView(distRow("4", all.n4, scored, pct(all.n4, total)));
+        card.addView(distRow("3", all.n3, scored, pct(all.n3, total)));
+        card.addView(distRow("2", all.n2, scored, pct(all.n2, total)));
+        return card;
+    }
+
+    private static int pct(int n, int total) {
+        return total > 0 ? Math.round(n * 100f / total) : 0;
+    }
+
+    private View metricTile(String label, String value, String sub, int color) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(roundBg(SURFACE, 3, STROKE));
+        card.addView(tv(label, 10, MUTED, true));
+        TextView v = tv(value, 22, color, true);
+        v.setPadding(0, dp(2), 0, 0);
+        card.addView(v);
+        TextView s = tv(sub, 10, MUTED, false);
+        s.setMaxLines(2);
+        card.addView(s);
+        return card;
+    }
+
+    private View metricRow(View a, View b) {
+        LinearLayout row = new LinearLayout(this);
+        boolean stack = tight();
+        row.setOrientation(stack ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(8);
+        row.setLayoutParams(lp);
+        if (stack) {
+            row.addView(a, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            blp.topMargin = dp(8);
+            row.addView(b, blp);
+        } else {
+            row.addView(a, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            blp.leftMargin = dp(8);
+            row.addView(b, blp);
+        }
+        return row;
+    }
+
+    private View subjectsCard(Map<String, SubjectStat> map) {
+        List<SubjectStat> list = new ArrayList<>();
+        for (SubjectStat st : map.values()) {
+            if (!"Все предметы".equals(st.name) && st.scored() > 0) {
+                list.add(st);
+            }
+        }
+        Collections.sort(list, new Comparator<SubjectStat>() {
+            @Override public int compare(SubjectStat a, SubjectStat b) {
+                int c = Double.compare(b.avg(), a.avg());
+                if (c != 0) return c;
+                return a.name.compareToIgnoreCase(b.name);
+            }
+        });
+        if (list.isEmpty()) return spacer(dp(0));
+
+        LinearLayout card = card(SURFACE);
+        card.setPadding(dp(16), dp(12), dp(16), dp(6));
+        card.addView(tv("По предметам", 15, TEXT, true));
+        card.addView(tv("средний балл и качество знаний", 11, MUTED, false));
+
+        for (int i = 0; i < list.size(); i++) {
+            if (i == 0) {
+                View line = new View(this);
+                line.setBackgroundColor(DIVIDER);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+                lp.topMargin = dp(10);
+                card.addView(line, lp);
+            }
+            card.addView(subjectStatRow(list.get(i)));
+        }
+        return card;
+    }
+
+    private View subjectStatRow(final SubjectStat st) {
+        double avg = st.avg();
+        int color = avg >= 4.5 ? GREEN : avg >= 3.5 ? AMBER : RED;
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(4), dp(9), dp(4), dp(9));
+        row.setClickable(true);
+        row.setBackground(rippleBg(0x00000000, 4));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = tv(st.name, 14, TEXT, true);
+        name.setMaxLines(2);
+        top.addView(name, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView a = tv(String.format(Locale.US, "%.2f", avg), 16, color, true);
+        a.setGravity(Gravity.END);
+        top.addView(a);
+        row.addView(top);
+        row.addView(markBar(avg, color));
+
+        java.util.List<View> tags = new java.util.ArrayList<>();
+        tags.add(tag(st.count + " " + plural(st.count,
+                "оценка", "оценки", "оценок"), MUTED, SURFACE2));
+        tags.add(tag("качество " + st.quality() + "%",
+                st.qualityColor(), soft(st.qualityColor())));
+        if (st.n5 > 0) tags.add(tag("5 · " + st.n5, GREEN, soft(GREEN)));
+        if (st.n4 > 0) tags.add(tag("4 · " + st.n4, MARK4, soft(MARK4)));
+        if (st.n3 > 0) tags.add(tag("3 · " + st.n3, AMBER, soft(AMBER)));
+        if (st.n2 > 0) tags.add(tag("2 · " + st.n2, RED, soft(RED)));
+        LinearLayout flow = chipFlow(tags);
+        flow.setPadding(0, dp(5), 0, 0);
+        row.addView(flow);
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { subjectStatsDialog(st); }
+        });
+        return row;
+    }
+
+    private void subjectStatsDialog(final SubjectStat st) {
+        double avg = st.avg();
+        int color = avg >= 4.5 ? GREEN : avg >= 3.5 ? AMBER : RED;
+        String msg = "Средний балл: " + String.format(Locale.US, "%.2f", avg)
+                + "\nВыйдет: " + Stats.gradeOf(avg)
+                + "\nОценок: " + st.count + (st.other > 0
+                ? " (+" + st.other + " без балла)" : "")
+                + "\n\n5: " + st.n5 + "   4: " + st.n4
+                + "   3: " + st.n3 + "   2: " + st.n2
+                + "\n\nКачество: " + st.quality() + "%"
+                + "\nУспеваемость: " + st.success() + "%";
+        new AlertDialog.Builder(this)
+                .setTitle(st.name)
+                .setMessage(msg)
+                .setPositiveButton("В калькулятор", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int which) {
+                        statsSubject = st.name;
+                        prefs.edit().putString("statsSubject", statsSubject).apply();
+                        statsScrollToCalc = true;
+                        renderTab();
+                    }
+                })
+                .setNegativeButton("Закрыть", null)
+                .show();
+    }
+
+    // ------------------------------------------------------------- калькулятор
+
+    private View statsCalculatorCard(final Map<String, SubjectStat> map) {
+        final List<String> names = new ArrayList<>(map.keySet());
+        if (names.remove("Все предметы")) names.add(0, "Все предметы");
+        if (names.size() > 2) {
+            Collections.sort(names.subList(1, names.size()),
+                    String.CASE_INSENSITIVE_ORDER);
+        }
+        final String[] subject = {map.containsKey(statsSubject)
+                ? statsSubject : "Все предметы"};
+        final int[] target = {statsTarget};
+        final int[] future = {Math.max(1, Math.min(10, statsFuture))};
+
+        LinearLayout card = card(SURFACE);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.addView(tv("Калькулятор оценки", 15, TEXT, true));
+        card.addView(tv("что нужно, чтобы вышла нужная итоговая", 11, MUTED, false));
+
+        LinearLayout pick = new LinearLayout(this);
+        pick.setOrientation(LinearLayout.HORIZONTAL);
+        pick.setGravity(Gravity.CENTER_VERTICAL);
+        pick.setClickable(true);
+        pick.setBackground(rippleBg(SURFACE2, 3));
+        pick.setPadding(dp(10), dp(9), dp(10), dp(9));
+
+        final TextView subjectLabel = tv(subject[0], 13, TEXT, true);
+        subjectLabel.setSingleLine(true);
+        subjectLabel.setEllipsize(TextUtils.TruncateAt.END);
+        pick.addView(subjectLabel, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        pick.addView(tv("выбрать ▾", 11, ACCENT, true));
+        card.addView(pick, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout targets = new LinearLayout(this);
+        targets.setOrientation(LinearLayout.HORIZONTAL);
+        targets.setPadding(0, dp(8), 0, 0);
+        final Runnable[] refresh = new Runnable[1];
+        final TextView[] tchips = new TextView[3];
+        final int[] grades = {3, 4, 5};
+        for (int i = 0; i < grades.length; i++) {
+            final int g = grades[i];
+            final TextView t = tv("на " + g, 12, TEXT, false);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(dp(12), dp(9), dp(12), dp(9));
+            t.setMinHeight(dp(38));
+            t.setBackground(roundBg(SURFACE2, 3, STROKE));
+            t.setClickable(true);
+            t.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    target[0] = g;
+                    statsTarget = g;
+                    prefs.edit().putInt("statsTarget", g).apply();
+                    styleCalcChip(tchips[0], target[0] == 3);
+                    styleCalcChip(tchips[1], target[0] == 4);
+                    styleCalcChip(tchips[2], target[0] == 5);
+                    if (refresh[0] != null) refresh[0].run();
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) lp.leftMargin = dp(6);
+            targets.addView(t, lp);
+            tchips[i] = t;
+        }
+        card.addView(targets);
+
+        LinearLayout stepper = new LinearLayout(this);
+        stepper.setOrientation(LinearLayout.HORIZONTAL);
+        stepper.setGravity(Gravity.CENTER_VERTICAL);
+        stepper.setPadding(0, dp(10), 0, 0);
+        stepper.addView(tv("Ещё оценок", 12, MUTED, false),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        final TextView minus = tv("−", 18, TEXT, true);
+        minus.setGravity(Gravity.CENTER);
+        minus.setBackground(roundBg(SURFACE2, 3, STROKE));
+        minus.setClickable(true);
+        stepper.addView(minus, new LinearLayout.LayoutParams(dp(34), dp(34)));
+
+        final TextView futureLabel = tv(String.valueOf(future[0]), 15, TEXT, true);
+        futureLabel.setGravity(Gravity.CENTER);
+        stepper.addView(futureLabel, new LinearLayout.LayoutParams(
+                dp(40), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final TextView plus = tv("+", 18, TEXT, true);
+        plus.setGravity(Gravity.CENTER);
+        plus.setBackground(roundBg(SURFACE2, 3, STROKE));
+        plus.setClickable(true);
+        stepper.addView(plus, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        card.addView(stepper);
+
+        final TextView big = tv("—", 28, ACCENT, true);
+        big.setPadding(0, dp(10), 0, 0);
+        final TextView explanation = tv("", 11, MUTED, false);
+        final TextView current = tv("", 11, MUTED, false);
+        current.setPadding(0, dp(2), 0, 0);
+        final TextView needLine = tv("", 11, MUTED, false);
+        card.addView(big);
+        card.addView(explanation);
+        card.addView(current);
+        card.addView(needLine);
+
+        TextView outLabel = tv("Если следующая оценка:", 10, MUTED, true);
+        outLabel.setLetterSpacing(0.06f);
+        outLabel.setPadding(0, dp(9), 0, 0);
+        card.addView(outLabel);
+        LinearLayout outRow = new LinearLayout(this);
+        outRow.setOrientation(LinearLayout.HORIZONTAL);
+        final int[] outMarks = {5, 4, 3};
+        final int[] outColors = {GREEN, MARK4, AMBER};
+        final TextView[] outs = new TextView[3];
+        for (int i = 0; i < outs.length; i++) {
+            TextView t = tv("", 11, outColors[i], false);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(dp(6), dp(6), dp(6), dp(6));
+            t.setBackground(roundBg(SURFACE2, 3, STROKE));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) lp.leftMargin = dp(6);
+            outRow.addView(t, lp);
+            outs[i] = t;
+        }
+        card.addView(outRow);
+
+        final LinearLayout scenarios = new LinearLayout(this);
+        scenarios.setOrientation(LinearLayout.VERTICAL);
+        scenarios.setPadding(0, dp(8), 0, 0);
+        card.addView(scenarios);
+        final TextView[] scen = new TextView[5];
+        for (int i = 0; i < 5; i++) {
+            scen[i] = tv("", 11, MUTED, false);
+            scen[i].setPadding(0, dp(1), 0, dp(1));
+            scenarios.addView(scen[i]);
+        }
+
+        final Runnable update = new Runnable() {
+            @Override public void run() {
+                SubjectStat st = map.get(subject[0]);
+                if (st == null) st = map.get("Все предметы");
+                subjectLabel.setText(subject[0]);
+                futureLabel.setText(String.valueOf(future[0]));
+                styleCalcChip(tchips[0], target[0] == 3);
+                styleCalcChip(tchips[1], target[0] == 4);
+                styleCalcChip(tchips[2], target[0] == 5);
+
+                double s = st.sum;
+                double w = st.weight;
+                double avg = st.avg();
+                int grade = target[0];
+                int proj = Stats.gradeOf(avg);
+                double req = Stats.requiredAverage(s, w, grade, future[0]);
+                int min = Stats.minMarks(s, w, grade);
+
+                if (st.weight <= 0) {
+                    big.setText("—");
+                    big.setTextColor(MUTED);
+                    explanation.setText("По этому предмету пока нет оценок с баллом");
+                    current.setText("");
+                } else if (min == 0) {
+                    big.setText("уже есть");
+                    big.setTextColor(GREEN);
+                    boolean safe2 = Stats.projectedAfter(s, w, 2) >= Stats.thresholdFor(grade);
+                    explanation.setText("Средний " + String.format(Locale.US, "%.2f", avg)
+                            + " уже даёт " + grade + "."
+                            + (safe2 ? " Даже двойка не помешает." : ""));
+                    current.setText("Сейчас " + String.format(Locale.US, "%.2f", avg)
+                            + " · выйдет " + proj + " · оценок: " + st.scored());
+                } else if (req > 5.0001) {
+                    big.setText("> 5");
+                    big.setTextColor(RED);
+                    explanation.setText("За " + future[0] + " "
+                            + plural(future[0], "оценку", "оценки", "оценок")
+                            + " не выйдет: нужно ещё " + min + " "
+                            + plural(min, "пятёрка", "пятёрки", "пятёрок") + " подряд");
+                    current.setText("Сейчас " + String.format(Locale.US, "%.2f", avg)
+                            + " · выйдет " + proj + " · оценок: " + st.scored());
+                } else {
+                    big.setText(String.format(Locale.US, "%.2f", req));
+                    big.setTextColor(req <= 4 ? GREEN : req <= 4.8 ? AMBER : RED);
+                    explanation.setText("средний балл за " + future[0] + " "
+                            + plural(future[0], "оценку", "оценки", "оценок")
+                            + ", чтобы вышло " + grade);
+                    current.setText("Сейчас " + String.format(Locale.US, "%.2f", avg)
+                            + " · выйдет " + proj + " · оценок: " + st.scored());
+                }
+
+                if (w <= 0) {
+                    needLine.setText("");
+                } else if (min <= 0) {
+                    needLine.setText("До цели уже хватает — пятёрки не обязательны");
+                    needLine.setTextColor(GREEN);
+                } else {
+                    needLine.setText("Пятёрок подряд до цели: " + min);
+                    needLine.setTextColor(MUTED);
+                }
+                for (int i = 0; i < outs.length; i++) {
+                    double p = Stats.projectedAfter(s, w, outMarks[i]);
+                    outs[i].setText(outMarks[i] + " → "
+                            + (w > 0 ? String.format(Locale.US, "%.2f", p) : "—"));
+                }
+
+                for (int i = 0; i < 5; i++) {
+                    int n = i + 1;
+                    double r = Stats.requiredAverage(s, w, grade, n);
+                    String txt;
+                    if (w <= 0) {
+                        txt = n + " → —";
+                    } else if (r > 5.0001) {
+                        txt = n + " → нужно больше 5";
+                    } else if (r <= 2) {
+                        txt = n + " → хватит любой";
+                    } else {
+                        txt = n + " → " + String.format(Locale.US, "%.2f", r);
+                    }
+                    scen[i].setText(txt);
+                    scen[i].setTextColor(w <= 0 ? MUTED
+                            : r > 5.0001 ? RED : r <= 2 ? GREEN : MUTED);
+                }
+            }
+        };
+
+        pick.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                int checked = names.indexOf(subject[0]);
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Предмет")
+                        .setSingleChoiceItems(names.toArray(new String[0]), checked,
+                                new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface d, int which) {
+                                subject[0] = names.get(which);
+                                statsSubject = subject[0];
+                                prefs.edit().putString("statsSubject", statsSubject).apply();
+                                d.dismiss();
+                                update.run();
+                            }
+                        })
+                        .setNegativeButton("Отмена", null)
+                        .show();
+            }
+        });
+
+        minus.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (future[0] <= 1) return;
+                future[0]--;
+                statsFuture = future[0];
+                prefs.edit().putInt("statsFuture", statsFuture).apply();
+                update.run();
+            }
+        });
+        plus.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (future[0] >= 10) return;
+                future[0]++;
+                statsFuture = future[0];
+                prefs.edit().putInt("statsFuture", statsFuture).apply();
+                update.run();
+            }
+        });
+
+        refresh[0] = update;
+        update.run();
+        return card;
+    }
+
+    private void styleCalcChip(TextView t, boolean sel) {
+        t.setTextColor(sel ? ON_ACCENT : TEXT);
+        t.setTypeface(sel ? fontSerifBold : fontMedium);
+        t.setBackground(sel ? roundBg(ACCENT, 3, 0) : roundBg(SURFACE2, 3, STROKE));
+    }
+
+    // ------------------------------------------------------------- ДЗ в итогах
+
+    private void renderHwStats(LinearLayout content, JSONArray items) {
+        if (items.length() == 0) {
+            content.addView(sectionHeader("ДОМАШНЕЕ ЗАДАНИЕ", 0));
+            content.addView(emptyCard("Заданий нет",
+                    "За последние 30 дней и на две недели вперёд ничего нет"));
+            return;
+        }
+
+        content.addView(sectionHeader("ДОМАШНЕЕ ЗАДАНИЕ", 0));
+        TextView range = tv("30 дней назад и 2 недели вперёд · "
+                + "галочки ставятся на этом телефоне", 10, MUTED, false);
+        range.setPadding(dp(4), 0, dp(4), dp(6));
+        content.addView(range);
+        content.addView(hwProgressCard(items));
+
+        Map<String, int[]> bySubject = new LinkedHashMap<>();
+        List<JSONObject> undone = new ArrayList<>();
+        String today = today();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject h = items.optJSONObject(i);
+            if (h == null) continue;
+            String name = Api.s(h, "subject");
+            if (name.isEmpty()) name = "Без предмета";
+            int[] n = bySubject.get(name);
+            if (n == null) {
+                n = new int[]{0, 0};
+                bySubject.put(name, n);
+            }
+            n[0]++;
+            if (hwDone(h)) {
+                n[1]++;
+            } else {
+                undone.add(h);
+            }
+        }
+
+        List<String> subs = new ArrayList<>(bySubject.keySet());
+        Collections.sort(subs, new Comparator<String>() {
+            @Override public int compare(String a, String b) {
+                int[] x = bySubject.get(a);
+                int[] y = bySubject.get(b);
+                int lx = x[0] - x[1];
+                int ly = y[0] - y[1];
+                if (lx != ly) return ly - lx;
+                return a.compareToIgnoreCase(b);
+            }
+        });
+
+        if (!subs.isEmpty()) {
+            LinearLayout card = card(SURFACE);
+            card.setPadding(dp(16), dp(12), dp(16), dp(8));
+            card.addView(tv("По предметам", 15, TEXT, true));
+            card.addView(tv("сколько сделано из заданного", 11, MUTED, false));
+            int limit = Math.min(subs.size(), 8);
+            for (int i = 0; i < limit; i++) {
+                String name = subs.get(i);
+                int[] n = bySubject.get(name);
+                card.addView(hwSubjectStatRow(name, n[1], n[0]));
+            }
+            if (subs.size() > limit) {
+                TextView more = tv("и ещё " + (subs.size() - limit) + " "
+                        + plural(subs.size() - limit, "предмет", "предмета", "предметов"),
+                        11, MUTED, false);
+                more.setPadding(0, dp(6), 0, 0);
+                card.addView(more);
+            }
+            content.addView(card);
+        }
+
+        Collections.sort(undone, new Comparator<JSONObject>() {
+            @Override public int compare(JSONObject a, JSONObject b) {
+                int c = Api.s(a, "date").compareTo(Api.s(b, "date"));
+                if (c != 0) return c;
+                return Api.s(a, "subject").compareTo(Api.s(b, "subject"));
+            }
+        });
+
+        content.addView(sectionHeader("НЕ СДЕЛАНО", undone.size()));
+        if (undone.isEmpty()) {
+            content.addView(emptyCard("Всё сделано",
+                    "Среди заданий за 30 дней и на две недели вперёд"));
+        } else {
+            LinearLayout card = card(SURFACE);
+            card.setPadding(dp(8), dp(4), dp(8), dp(4));
+            int limit = Math.min(undone.size(), 12);
+            for (int i = 0; i < limit; i++) {
+                final JSONObject h = undone.get(i);
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(6), dp(9), dp(6), dp(9));
+
+                row.addView(hwDoneBox(h, new Runnable() {
+                    @Override public void run() {
+                        if (tab == TAB_STATS) {
+                            if (statsScroll != null) statsScrollY = statsScroll.getScrollY();
+                            renderTab();
+                        }
+                    }
+                }), new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+                LinearLayout body = new LinearLayout(this);
+                body.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                blp.leftMargin = dp(10);
+                row.addView(body, blp);
+
+                LinearLayout top = new LinearLayout(this);
+                top.setOrientation(LinearLayout.HORIZONTAL);
+                top.setGravity(Gravity.CENTER_VERTICAL);
+                String subject = Api.s(h, "subject");
+                TextView s = tv(subject.isEmpty() ? "Задание" : subject, 13, TEXT, true);
+                s.setMaxLines(1);
+                s.setEllipsize(TextUtils.TruncateAt.END);
+                top.addView(s, new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                String date = Api.s(h, "date");
+                int dc = date.compareTo(today) < 0 ? RED : MUTED;
+                top.addView(tv(hwDateLabel(date), 10, dc, false));
+                body.addView(top);
+
+                String text = Api.s(h, "text").trim();
+                if (text.isEmpty()) text = "(см. материалы)";
+                TextView t = tv(text, 11, MUTED, false);
+                t.setMaxLines(2);
+                t.setEllipsize(TextUtils.TruncateAt.END);
+                t.setPadding(0, dp(2), 0, 0);
+                body.addView(t);
+
+                card.addView(row);
+            }
+            content.addView(card);
+            if (undone.size() > limit) {
+                TextView more = tv("Показаны первые " + limit + " из " + undone.size()
+                        + ". Остальные — на вкладке ДЗ.", 11, MUTED, false);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.topMargin = dp(6);
+                content.addView(more, lp);
+            }
+        }
+    }
+
+    private View hwSubjectStatRow(String name, int done, int total) {
+        int percent = total > 0 ? Math.round(done * 100f / total) : 0;
+        int color = percent >= 80 ? GREEN : percent >= 50 ? AMBER : RED;
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(4), dp(8), dp(4), dp(8));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView n = tv(name, 13, TEXT, false);
+        n.setMaxLines(1);
+        n.setEllipsize(TextUtils.TruncateAt.END);
+        top.addView(n, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        top.addView(tv(done + " / " + total, 12, color, true));
+        row.addView(top);
+
+        ProgressBar pb = new ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
+        pb.setMax(Math.max(1, total));
+        pb.setProgress(done);
+        pb.setProgressTintList(ColorStateList.valueOf(color));
+        pb.setProgressBackgroundTintList(ColorStateList.valueOf(SURFACE2));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
+        lp.topMargin = dp(5);
+        row.addView(pb, lp);
+        return row;
+    }
+
     // ------------------------------------------------------------- профиль
 
     private void fetchProfile(boolean force) {
@@ -6981,7 +8286,11 @@ public final class MainActivity extends Activity {
                         + "(карточки, рамки ответов, экран результата). Долгое нажатие "
                         + "на луну в окне задания — отчёт о том, что осталось светлым.\n\n"
                         + "2.6: темы оформления — Full black, Nord, Catppuccin и Gruvbox. "
-                        + "Тема применяется и к приложению, и к окну задания.")
+                        + "Тема применяется и к приложению, и к окну задания.\n\n"
+                        + "2.7: вкладка «Итоги» — средний балл с учётом веса, качество "
+                        + "и успеваемость, распределение оценок, динамика, статистика "
+                        + "по предметам, калькулятор «что нужно до 3/4/5» и чек-лист "
+                        + "домашнего задания.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
