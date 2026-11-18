@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -51,7 +52,15 @@ final class Api {
     }
 
     static class ApiException extends Exception {
-        ApiException(String m) { super(m); }
+        /** HTTP-код ответа МЭШ, если он был. 0 — сеть или разбор ответа. */
+        final int status;
+
+        ApiException(String m) { this(0, m); }
+
+        ApiException(int status, String m) {
+            super(m);
+            this.status = status;
+        }
     }
 
     private final String token;
@@ -62,6 +71,40 @@ final class Api {
     // Выбранный ребёнок. Если не задан, берём active_student из cookies.
     private static String selectedStudentId;
     private static String selectedPersonId;
+
+    // Родительский кабинет: в /profile лежит взрослый, ребёнок — в children.
+    private static volatile boolean parentAccount;
+
+    static void setParentAccount(boolean parent) {
+        parentAccount = parent;
+    }
+
+    static boolean isParentAccount() {
+        return parentAccount;
+    }
+
+    /** Имя роли из cookie aupd_current_role: «ученик:2», «родитель:3». */
+    private static String roleName() {
+        String role = Cookies.map().get("aupd_current_role");
+        if (role == null) return "";
+        try {
+            role = URLDecoder.decode(role, "UTF-8");
+        } catch (Exception ignored) {
+        }
+        int i = role.indexOf(':');
+        String name = (i > 0 ? role.substring(0, i) : role).trim();
+        return name.toLowerCase();
+    }
+
+    static boolean isParentRole() {
+        String n = roleName();
+        return n.contains("родител") || n.contains("parent");
+    }
+
+    static boolean isStudentRole() {
+        String n = roleName();
+        return n.contains("ученик") || n.contains("student");
+    }
 
     static void selectStudent(String sid, String person) {
         selectedStudentId = sid == null || sid.trim().isEmpty() ? null : sid.trim();
@@ -151,10 +194,11 @@ final class Api {
                 c.setRequestProperty("Accept-Language",
                         "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
                 c.setRequestProperty("Referer", BASE + "/diary");
-                c.setRequestProperty("X-Mes-RoleId", ej ? roleId() : "1");
+                c.setRequestProperty("X-Mes-RoleId",
+                        ej || parentAccount ? roleId() : "1");
                 c.setRequestProperty("X-mes-subsystem", "familyweb");
                 c.setRequestProperty("Profile-Id", ej ? studentId() : "");
-                c.setRequestProperty("Profile-Type", ej ? "student" : "");
+                c.setRequestProperty("Profile-Type", ej ? profileType() : "");
                 c.setRequestProperty("Authorization", "Bearer " + token);
                 if (!cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
 
@@ -202,14 +246,18 @@ final class Api {
         if (studentId != null) return studentId;
         JSONObject p = profile();
         JSONObject prof = p.optJSONObject("profile");
-        String sid = prof == null ? "" : s(prof, "id");
-        if (sid.isEmpty()) {
-            JSONArray kids = p.optJSONArray("children");
-            if (kids != null && kids.length() > 0) {
-                JSONObject k = kids.optJSONObject(0);
-                if (k != null) sid = s(k, "id");
-            }
-        }
+        JSONArray kids = p.optJSONArray("children");
+
+        // В родительском кабинете profile.id — это взрослый, а дневник
+        // открывается по id ребёнка из children. У ученика всё наоборот:
+        // профиль совпадает с ребёнком, поэтому порядок прежний.
+        boolean kidFirst = isParentRole()
+                || (kids != null && kids.length() > 1);
+        String kid = kids == null || kids.length() == 0
+                ? "" : s(kids.optJSONObject(0), "id");
+        String sid = kidFirst ? kid : (prof == null ? "" : s(prof, "id"));
+        if (sid.isEmpty()) sid = kidFirst
+                ? (prof == null ? "" : s(prof, "id")) : kid;
         if (sid.isEmpty()) throw new ApiException("не могу определить student_id");
         studentId = sid;
         return sid;
@@ -516,10 +564,19 @@ final class Api {
         if (p.isEmpty()) {
             JSONObject prof = profile();
             JSONArray kids = prof.optJSONArray("children");
+            JSONObject k = null;
             if (kids != null && kids.length() > 0) {
-                JSONObject k = kids.optJSONObject(0);
-                if (k != null) p = s(k, "contingent_guid").trim();
+                for (int i = 0; i < kids.length() && selectedStudentId != null; i++) {
+                    JSONObject cur = kids.optJSONObject(i);
+                    if (cur != null
+                            && selectedStudentId.equals(s(cur, "id"))) {
+                        k = cur;
+                        break;
+                    }
+                }
+                if (k == null) k = kids.optJSONObject(0);
             }
+            if (k != null) p = s(k, "contingent_guid").trim();
         }
         personId = p;
         return p;
@@ -542,6 +599,29 @@ final class Api {
         put(body, "work_type", "INDEPENDENT_WORK");
         if (variant != null) put(body, "variant", variant);
         return sendJson("POST", EJ + "/student_work", body);
+    }
+
+    /**
+     * id работы из объекта student_work. В МЭШ это student_work_id, но
+     * на всякий случай смотрим и привычные id/studentWorkId.
+     */
+    static String workId(JSONObject work) {
+        if (work == null) return "";
+        String id = num(work, "student_work_id");
+        if (id.isEmpty()) id = num(work, "studentWorkId");
+        if (id.isEmpty()) id = num(work, "id");
+        return id;
+    }
+
+    /** Перечитывает урок и отдаёт id уже созданной работы (ответ на 409). */
+    String existingWorkId(String lessonId) throws ApiException, AuthException {
+        for (int i = 0; i < 3; i++) {
+            String id = workId(lesson(lessonId).optJSONObject("student_work"));
+            if (!id.isEmpty()) return id;
+            // Работа могла создаваться параллельно — дадим МЭШ секунду.
+            sleep(700);
+        }
+        return "";
     }
 
     /** Ссылка и токен для загрузки одного файла в хранилище. */
@@ -632,7 +712,7 @@ final class Api {
             c.setRequestProperty("X-Mes-RoleId", roleId());
             c.setRequestProperty("X-mes-subsystem", "familyweb");
             c.setRequestProperty("Profile-Id", studentId());
-            c.setRequestProperty("Profile-Type", "student");
+            c.setRequestProperty("Profile-Type", profileType());
             c.setRequestProperty("Authorization", "Bearer " + token);
             if (!cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
             c.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
@@ -652,7 +732,7 @@ final class Api {
             String text = readAll(code >= 400
                     ? c.getErrorStream() : c.getInputStream());
             if (code < 200 || code >= 300) {
-                throw new ApiException("HTTP " + code + ": " + clip(text, 300));
+                throw new ApiException(code, "HTTP " + code + ": " + clip(text, 400));
             }
             if (text.trim().isEmpty()) return new JSONObject();
             return new JSONObject(text);
@@ -672,6 +752,11 @@ final class Api {
             if (r.matches("\\d+")) return r;
         }
         return "1";
+    }
+
+    /** Тип профиля для заголовка Profile-Type: у родителя — parent. */
+    private static String profileType() {
+        return isParentAccount() || isParentRole() ? "parent" : "student";
     }
 
     // ------------------------------------------------------------ нормализация
@@ -977,6 +1062,29 @@ final class Api {
         if (o == null) return "";
         Object v = o.opt(key);
         return str(v);
+    }
+
+    /** Число как строка без хвоста «.0» — для id, которые уходят в URL. */
+    static String num(JSONObject o, String key) {
+        if (o == null) return "";
+        Object v = o.opt(key);
+        if (v == null || v == JSONObject.NULL) return "";
+        if (v instanceof Number) return String.valueOf(((Number) v).longValue());
+        String s = str(v).trim();
+        if (s.endsWith(".0")) s = s.substring(0, s.length() - 2);
+        return s;
+    }
+
+    /** Число из JSON, даже если сервер отдал его строкой. */
+    static long numLong(JSONObject o, String key) {
+        if (o == null) return 0;
+        Object v = o.opt(key);
+        if (v instanceof Number) return ((Number) v).longValue();
+        try {
+            return Long.parseLong(str(v).trim());
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     static String str(Object v) {

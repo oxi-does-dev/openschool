@@ -45,4 +45,73 @@
         <item name="android:textColorSecondary">#A79D8B</item>
         <item name="android:windowIsFloating">true</item>
     </style>
+
+    <!-- Дополнительные тёмные темы: те же роли, другая палитра. -->
+    <style name="OverlayBlack">
+        <item name="android:alertDialogTheme">@style/AppDialogBlack</item>
+        <item name="android:colorAccent">#FFFFFF</item>
+        <item name="android:colorBackground">#000000</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:textColorSecondary">#9C9C9C</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+    <style name="AppDialogBlack" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg_black</item>
+        <item name="android:colorAccent">#FFFFFF</item>
+        <item name="android:colorBackground">#000000</item>
+        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:textColorSecondary">#9C9C9C</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
+
+    <style name="OverlayNord">
+        <item name="android:alertDialogTheme">@style/AppDialogNord</item>
+        <item name="android:colorAccent">#88C0D0</item>
+        <item name="android:colorBackground">#2E3440</item>
+        <item name="android:textColorPrimary">#ECEFF4</item>
+        <item name="android:textColorSecondary">#AEB8C8</item>
+    </style>
+
+    <style name="AppDialogNord" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg_nord</item>
+        <item name="android:colorAccent">#88C0D0</item>
+        <item name="android:textColorPrimary">#ECEFF4</item>
+        <item name="android:textColorSecondary">#AEB8C8</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
+
+    <style name="OverlayCatppuccin">
+        <item name="android:alertDialogTheme">@style/AppDialogCatppuccin</item>
+        <item name="android:colorAccent">#89B4FA</item>
+        <item name="android:colorBackground">#1E1E2E</item>
+        <item name="android:textColorPrimary">#CDD6F4</item>
+        <item name="android:textColorSecondary">#A6ADC8</item>
+    </style>
+
+    <style name="AppDialogCatppuccin" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg_catppuccin</item>
+        <item name="android:colorAccent">#89B4FA</item>
+        <item name="android:textColorPrimary">#CDD6F4</item>
+        <item name="android:textColorSecondary">#A6ADC8</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
+
+    <style name="OverlayGruvbox">
+        <item name="android:alertDialogTheme">@style/AppDialogGruvbox</item>
+        <item name="android:colorAccent">#83A598</item>
+        <item name="android:colorBackground">#282828</item>
+        <item name="android:textColorPrimary">#EBDBB2</item>
+        <item name="android:textColorSecondary">#A89984</item>
+    </style>
+
+    <style name="AppDialogGruvbox" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg_gruvbox</item>
+        <item name="android:colorAccent">#83A598</item>
+        <item name="android:textColorPrimary">#EBDBB2</item>
+        <item name="android:textColorSecondary">#A89984</item>
+        <item name="android:windowIsFloating">true</item>
+    </style>
 </resources>

@@ -10,8 +10,12 @@ cpp/build/
 *.pyc
 __pycache__/
 
+# сборка (локальный скрипт)
+android/build-local/
+
 # подпись
 android/keystore/
+android/.keys/
 *.jks
 *.keystore
 
