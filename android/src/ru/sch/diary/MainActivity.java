@@ -106,6 +106,9 @@ public final class MainActivity extends Activity {
     private int ON_ACCENT;               // текст на акцентной плашке
     private int[] SUBJECT_COLORS;
     private boolean darkTheme;
+    // Full black рисует акцент контуром, а не заливкой: кнопка остаётся
+    // чёрной, белыми становятся рамка и текст.
+    private boolean outlineAccent;
 
     private static final int[] SUBJECT_COLORS_LIGHT = {
             0xFF34577D, 0xFF2F6B4F, 0xFF9A6A22, 0xFF6F4A75,
@@ -123,32 +126,36 @@ public final class MainActivity extends Activity {
      */
     private void applyPalette(String theme) {
         darkTheme = !"light".equals(theme);
+        outlineAccent = "black".equals(theme);
         // В окне ЦДЗ тёмная тема должна совпадать с темой приложения.
         CDZ_BG = 0xFF171613;
         if ("black".equals(theme)) {
+            // Настоящий чёрный: поверхности почти не отличаются от фона,
+            // поэтому карточку видно только по белой тонкой рамке. Акцент
+            // белый и контурный (accentPlate), цветными остаются оценки.
             BG = 0xFF000000;
-            SURFACE = 0xFF0A0A0A;
-            SURFACE2 = 0xFF141414;
-            TEXT = 0xFFE6E6E6;
-            MUTED = 0xFF9A9A9A;
-            ACCENT = 0xFF8AB4F8;
-            ACCENT2 = 0xFFAECBFA;
-            ACCENT_SOFT = 0x2A8AB4F8;
+            SURFACE = 0xFF050505;
+            SURFACE2 = 0xFF0D0D0D;
+            TEXT = 0xFFFFFFFF;
+            MUTED = 0xFF9C9C9C;
+            ACCENT = 0xFFFFFFFF;
+            ACCENT2 = 0xFFFFFFFF;
+            ACCENT_SOFT = 0x14FFFFFF;
             GREEN = 0xFF7FC58F;
             AMBER = 0xFFE0B45C;
             RED = 0xFFE58C84;
             TEAL = 0xFF79C0C0;
             VIOLET = 0xFFBE9FD0;
-            DIVIDER = 0xFF1F1F1F;
-            STROKE = 0xFF2A2A2A;
-            RULE = 0xFF333333;
-            CURRENT = 0xFF101010;
+            DIVIDER = 0xFF262626;
+            STROKE = 0xFFFFFFFF;
+            RULE = 0xFF3A3A3A;
+            CURRENT = 0xFF0A0A0A;
             MARK4 = 0xFFA9D18E;
-            ERR_BG = 0xFF1C0F0D;
-            ERR_STROKE = 0xFF47231F;
+            ERR_BG = 0xFF150808;
+            ERR_STROKE = 0xFF7A3A33;
             ON_ACCENT = 0xFF000000;
-            SUBJECT_COLORS = new int[]{ACCENT, GREEN, AMBER, VIOLET,
-                    TEAL, RED, 0xFFC99A72};
+            // Точки предметов тоже белые: цвет остаётся только у оценок.
+            SUBJECT_COLORS = new int[]{TEXT};
             CDZ_BG = BG;
         } else if ("nord".equals(theme)) {
             BG = 0xFF2E3440;
@@ -2051,11 +2058,10 @@ public final class MainActivity extends Activity {
 
     private View viewChip(String label, final int view) {
         boolean sel = marksView == view;
-        TextView t = tv(label, 13, sel ? ON_ACCENT : TEXT, sel);
+        TextView t = tv(label, 13, chipInk(sel), sel);
         t.setGravity(Gravity.CENTER);
         t.setPadding(dp(16), dp(8), dp(16), dp(8));
-        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
-                : roundBg(SURFACE, 3, STROKE));
+        t.setBackground(chipBg(sel, SURFACE));
         tappableChip(t);
         t.setClickable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -2076,10 +2082,9 @@ public final class MainActivity extends Activity {
 
     private View periodChip(String label, final int days) {
         boolean sel = marksDays == days;
-        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
+        TextView t = tv(label, 12, chipInk(sel), sel);
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
-        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
-                : roundBg(SURFACE, 3, STROKE));
+        t.setBackground(chipBg(sel, SURFACE));
         tappableChip(t);
         t.setClickable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -3868,11 +3873,10 @@ public final class MainActivity extends Activity {
             if (name.isEmpty()) name = "Ребёнок " + (i + 1);
             String cls = Api.s(kid, "class_name");
             TextView chip = tv(cls.isEmpty() ? name : name + "\n" + cls,
-                    12, sel ? ON_ACCENT : TEXT, sel);
+                    12, chipInk(sel), sel);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(dp(12), dp(8), dp(12), dp(8));
-            chip.setBackground(sel ? roundBg(ACCENT, 3, 0)
-                    : roundBg(SURFACE2, 3, STROKE));
+            chip.setBackground(chipBg(sel, SURFACE2));
             chip.setClickable(true);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -5138,10 +5142,9 @@ public final class MainActivity extends Activity {
 
     private View statsPeriodChip(String label, final int days) {
         boolean sel = statsDays == days;
-        TextView t = tv(label, 12, sel ? ON_ACCENT : TEXT, sel);
+        TextView t = tv(label, 12, chipInk(sel), sel);
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
-        t.setBackground(sel ? roundBg(ACCENT, 3, 0)
-                : roundBg(SURFACE, 3, STROKE));
+        t.setBackground(chipBg(sel, SURFACE));
         tappableChip(t);
         t.setClickable(true);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -5888,9 +5891,9 @@ public final class MainActivity extends Activity {
     }
 
     private void styleCalcChip(TextView t, boolean sel) {
-        t.setTextColor(sel ? ON_ACCENT : TEXT);
+        t.setTextColor(chipInk(sel));
         t.setTypeface(sel ? fontSerifBold : fontMedium);
-        t.setBackground(sel ? roundBg(ACCENT, 3, 0) : roundBg(SURFACE2, 3, STROKE));
+        t.setBackground(chipBg(sel, SURFACE2));
     }
 
     // ------------------------------------------------------------- ДЗ в итогах
@@ -7056,15 +7059,15 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
         row.setPadding(dp(16), dp(12), dp(16), dp(12));
-        row.setBackground(rippleBg(ACCENT, 3));
+        row.setBackground(accentRipple(3));
         row.setClickable(true);
 
         if (iconRes != 0) {
-            ImageView ic = icon(iconRes, ON_ACCENT, 16);
+            ImageView ic = icon(iconRes, accentInk(), 16);
             row.addView(ic, new LinearLayout.LayoutParams(dp(16), dp(16)));
         }
 
-        TextView t = tvSans(label, 14, ON_ACCENT, true);
+        TextView t = tvSans(label, 14, accentInk(), true);
         t.setGravity(Gravity.CENTER);
         t.setMaxLines(2);
         t.setEllipsize(TextUtils.TruncateAt.END);
@@ -8315,7 +8318,11 @@ public final class MainActivity extends Activity {
                         + "2.9: приложение стало вдвое легче — 367 КБ вместо "
                         + "839 КБ. Шрифты ужаты до нужных символов, dex "
                         + "прошёл через R8, картинки и архивы сжаты плотнее. "
-                        + "Вид и все шрифты те же.")
+                        + "Вид и все шрифты те же.\n\n"
+                        + "2.10: Full black стал настоящим чёрным: поверхности "
+                        + "почти сливаются с фоном, карточки видны по тонкой "
+                        + "белой рамке, кнопки — чёрные с белым контуром. "
+                        + "Цветными остались только оценки.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
@@ -9154,6 +9161,40 @@ public final class MainActivity extends Activity {
         return (color & 0x00FFFFFF) | 0x22000000;
     }
 
+    /** Текст на акцентной плашке: в Full black она чёрная внутри. */
+    private int accentInk() {
+        return outlineAccent ? TEXT : ON_ACCENT;
+    }
+
+    /** Акцентная плашка: заливка в обычных темах, белый контур в Full black. */
+    private Drawable accentPlate(int radiusDp) {
+        return outlineAccent ? roundBg(BG, radiusDp, ACCENT)
+                : roundBg(ACCENT, radiusDp, 0);
+    }
+
+    /** То же для кнопки с ripple. */
+    private Drawable accentRipple(int radiusDp) {
+        return outlineAccent ? rippleBg(BG, radiusDp, ACCENT)
+                : rippleBg(ACCENT, radiusDp);
+    }
+
+    /**
+     * Фон «сегмента» (чипа). В Full black выбранный — единственный с белой
+     * рамкой, остальные без неё: иначе выделение не читалось бы, ведь текст
+     * везде белый.
+     */
+    private Drawable chipBg(boolean selected, int fill) {
+        if (outlineAccent) {
+            return selected ? accentPlate(3) : roundBg(fill, 3, 0);
+        }
+        return selected ? roundBg(ACCENT, 3, 0) : roundBg(fill, 3, STROKE);
+    }
+
+    private int chipInk(boolean selected) {
+        if (outlineAccent) return selected ? TEXT : MUTED;
+        return selected ? ON_ACCENT : TEXT;
+    }
+
     private TextView tag(String text, int color, int bg) {
         TextView t = tv(text, 10, color, true);
         t.setSingleLine(true);
@@ -9205,13 +9246,13 @@ public final class MainActivity extends Activity {
     }
 
     private TextView primaryButton(String label, final Runnable action) {
-        TextView t = tv(label, 14, ON_ACCENT, true);
+        TextView t = tv(label, 14, accentInk(), true);
         t.setGravity(Gravity.CENTER);
         t.setMinHeight(dp(44));
         t.setMaxLines(2);
         t.setEllipsize(TextUtils.TruncateAt.END);
         t.setPadding(dp(16), dp(12), dp(16), dp(12));
-        t.setBackground(roundBg(ACCENT, 3, 0));
+        t.setBackground(accentPlate(3));
         t.setClickable(true);
         t.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { action.run(); }
@@ -9269,7 +9310,11 @@ public final class MainActivity extends Activity {
     }
 
     private Drawable rippleBg(int color, int radiusDp) {
-        GradientDrawable content = roundBg(color, radiusDp, 0);
+        return rippleBg(color, radiusDp, 0);
+    }
+
+    private Drawable rippleBg(int color, int radiusDp, int strokeColor) {
+        GradientDrawable content = roundBg(color, radiusDp, strokeColor);
         return new RippleDrawable(ColorStateList.valueOf(0x26FFFFFF), content, null);
     }
 }
