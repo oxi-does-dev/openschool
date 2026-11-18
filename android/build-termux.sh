@@ -47,14 +47,19 @@ if ! javac --release 11 -encoding UTF-8 \
 fi
 grep -v "^Note:" "$OUT/javac.log" || true
 
-echo "== d8"
+echo "== r8"
 find "$OUT/classes" -name '*.class' > "$OUT/classes.txt"
-java -cp "$D8JAR" com.android.tools.r8.D8 --release --min-api 26 \
-    --lib "$PLATFORM" --output "$OUT/dex" @"$OUT/classes.txt"
+# R8, а не D8: удаляет недостижимый код и укорачивает имена классов.
+# Правила — в r8.pro; без них Android не найдёт Activity и сервисы.
+java -cp "$D8JAR" com.android.tools.r8.R8 --release --min-api 26 \
+    --lib "$PLATFORM" --pg-conf r8.pro \
+    --output "$OUT/dex" @"$OUT/classes.txt"
 
-echo "== package dex"
-cp "$OUT/unsigned.apk" "$OUT/withdex.apk"
-(cd "$OUT/dex" && zip -q -X "$OUT/withdex.apk" classes.dex)
+echo "== package dex (zopfli)"
+# Не cp+zip, а пересборка архива: zopfli жмёт шрифты и dex на 15-17 КБ
+# плотнее обычного deflate. Без zopfli скрипт откатывается на zlib-9.
+python3 tools/recompress.py "$OUT/unsigned.apk" "$OUT/withdex.apk" \
+    "$OUT/dex/classes.dex"
 
 echo "== zipalign"
 zipalign -f -p 4 "$OUT/withdex.apk" "$OUT/aligned.apk"

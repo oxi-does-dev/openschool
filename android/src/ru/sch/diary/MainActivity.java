@@ -633,15 +633,17 @@ public final class MainActivity extends Activity {
 
     private void loadFonts() {
         Typeface base = Typeface.DEFAULT;
+        // Golos ужат до двух нужных начертаний: переменная ось wght
+        // занимала 95 КБ дельт, а приложение просит только 500 и 700.
         try {
-            base = new Typeface.Builder(getAssets(), "fonts/GolosText.ttf")
-                    .setWeight(500).build();
+            base = new Typeface.Builder(getAssets(), "fonts/GolosText-Medium.ttf")
+                    .build();
         } catch (Exception ignored) {
         }
         fontMedium = base;
         try {
-            fontBold = new Typeface.Builder(getAssets(), "fonts/GolosText.ttf")
-                    .setWeight(700).build();
+            fontBold = new Typeface.Builder(getAssets(), "fonts/GolosText-Bold.ttf")
+                    .build();
         } catch (Exception e) {
             fontBold = Typeface.DEFAULT_BOLD;
         }
@@ -8309,7 +8311,11 @@ public final class MainActivity extends Activity {
                         + "по предметам, калькулятор «что нужно до 3/4/5» и чек-лист "
                         + "домашнего задания.\n\n"
                         + "2.8: фильтры домашнего задания — в одной строке, тремя "
-                        + "выпадающими списками.")
+                        + "выпадающими списками.\n\n"
+                        + "2.9: приложение стало вдвое легче — 367 КБ вместо "
+                        + "839 КБ. Шрифты ужаты до нужных символов, dex "
+                        + "прошёл через R8, картинки и архивы сжаты плотнее. "
+                        + "Вид и все шрифты те же.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
@@ -8946,8 +8952,24 @@ public final class MainActivity extends Activity {
 
     private TextView tvHand(String s, float sp, int color) {
         TextView t = tv(s, sp, color, false);
-        t.setTypeface(fontHand);
+        // В компактном Caveat остались только цифры и знаки. Буквенные
+        // отметки («осв.», «н») рисуем запасным PT Serif — иначе вместо
+        // букв были бы пустые квадратики.
+        t.setTypeface(handOnly(s) ? fontHand : fontSerifBold);
         return t;
+    }
+
+    private static boolean handOnly(String s) {
+        if (s == null || s.isEmpty()) return true;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if ((c >= '0' && c <= '9')
+                    || " .,+-−—–/%×?:!()№".indexOf(c) >= 0) {
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 
     private TextView tvSans(String s, float sp, int color, boolean bold) {
