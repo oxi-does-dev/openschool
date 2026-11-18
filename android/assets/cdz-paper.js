@@ -1,5 +1,5 @@
 (function () {
-  var VERSION = 5;
+  var VERSION = 6;
 
   var BASE_ID = 'sch-paper-theme';   // шрифты, фон, ссылки, контролы, скроллбар
   var SITE_ID = 'sch-paper-site';    // перекрашенные правила самого ЦДЗ
@@ -29,9 +29,77 @@
     errBg: '#33211D', errStroke: '#5A3A31', mark: '#A8C98A'
   };
 
+  // Палитра по умолчанию («Тёмная бумага»). Остальные темы приходят из
+  // приложения как набор тех же ключей и подставляются в те же места.
+  var PAPER_DARK = DARK;
+  var appliedPalette = '';
+
+  // Базовый лист собран из литералов бумажной палитры. Для другой темы
+  // достаточно перекрасить сам CSS: роли те же, меняются значения.
+  var PAPER_ROLE = {
+    '#171613': 'bg', '#201E1A': 'surface', '#2A2721': 'surface2',
+    '#EAE3D5': 'ink', '#A79D8B': 'muted', '#8FB0D4': 'accent',
+    '#3E392F': 'line', '#35312A': 'divider', '#4A4438': 'rule',
+    '#2C2A20': 'current', '#D9827A': 'red', '#85B394': 'green',
+    '#D6A960': 'amber', '#7FB8B8': 'teal', '#B79BC4': 'violet',
+    '#33211D': 'errBg', '#5A3A31': 'errStroke', '#A8C98A': 'mark'
+  };
+  var PAPER_TRIPLE = {
+    '23,22,19': 'bg', '32,30,26': 'surface', '42,39,33': 'surface2',
+    '234,227,213': 'ink', '167,157,139': 'muted', '143,176,212': 'accent',
+    '62,57,47': 'line', '53,49,42': 'divider', '74,68,56': 'rule',
+    '44,42,32': 'current', '217,130,122': 'red', '133,179,148': 'green',
+    '214,169,96': 'amber', '127,184,184': 'teal', '183,155,196': 'violet'
+  };
+
+  // Наложение палитры приложения на тёмную бумагу: недостающие ключи
+  // берутся из бумажной, производные (акцентная подложка, текст на акценте)
+  // считаются из самого акцента.
+  function mergePalette(src) {
+    var out = {};
+    for (var k in PAPER_DARK) {
+      if (PAPER_DARK.hasOwnProperty(k)) out[k] = PAPER_DARK[k];
+    }
+    if (src && typeof src === 'object') {
+      for (var j in src) {
+        if (src.hasOwnProperty(j) && typeof src[j] === 'string' && src[j]) {
+          out[j] = src[j];
+        }
+      }
+    }
+    if (out.accentBg === PAPER_DARK.accentBg) out.accentBg = out.accent;
+    if (out.onAccent === PAPER_DARK.onAccent) out.onAccent = out.bg;
+    if (out.accentSoft === PAPER_DARK.accentSoft) {
+      out.accentSoft = withAlpha(out.accent, 0.165);
+    }
+    DARK = out;
+  }
+
+  // Перекраска литералов бумажной палитры в активную тему. Роли те же,
+  // поэтому базовый CSS не нужно дублировать под каждую тему.
+  function recolorCss(css) {
+    if (DARK === PAPER_DARK) return css;
+    return css.replace(
+        /#[0-9A-Fa-f]{6}\b|rgba\(\s*[0-9]+\s*,\s*[0-9]+\s*,\s*[0-9]+\s*,\s*[0-9.]+\s*\)/g,
+        function (tok) {
+          if (tok.charAt(0) === '#') {
+            var role = PAPER_ROLE[tok.toUpperCase()];
+            return role ? DARK[role] : tok;
+          }
+          var m = tok.match(/rgba\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9.]+)\s*\)/i);
+          if (!m) return tok;
+          var name = PAPER_TRIPLE[m[1] + ',' + m[2] + ',' + m[3]];
+          if (!name) return tok;
+          return withAlpha(DARK[name], parseFloat(m[4]));
+        });
+  }
+
   var isDarkOn = !!window.__schDark;
 
   if (window.__schPaper && window.__schPaper.version === VERSION) {
+    if (window.__schPalette && window.__schPaper.palette) {
+      window.__schPaper.palette(window.__schPalette);
+    }
     if (window.__schDark !== undefined) window.__schPaper.set(!!window.__schDark);
     return;
   }
@@ -669,7 +737,7 @@
 
   // --- статическая база (обе темы в одном листе, переключение — класс) ------
 
-  var BASE_CSS = [
+  var BASE_RAW = [
     'html:not(.sch-dark){color-scheme:light;}',
     'html.sch-dark{color-scheme:dark;}',
     'html:not(.sch-dark) body{background:#F5EFE2 !important;',
@@ -729,6 +797,8 @@
     '  stroke:currentColor !important;}'
   ].join('') + tokenCss() + mfCss() + dsCss();
 
+  function baseCss() { return recolorCss(BASE_RAW); }
+
   function addBase() {
     var doc = document;
     if (!doc.documentElement) return;
@@ -738,7 +808,8 @@
       st.id = BASE_ID;
       (doc.head || doc.documentElement).appendChild(st);
     }
-    if (st.textContent !== BASE_CSS) st.textContent = BASE_CSS;
+    var css = baseCss();
+    if (st.textContent !== css) st.textContent = css;
   }
 
   // --- перекраска CSS самого ЦДЗ -------------------------------------------
@@ -1364,6 +1435,32 @@
     }
   }
 
+  // Смена палитры на лету: правила сайта и inline-стили уже посчитаны
+  // в цветах прежней палитры, поэтому их надо пересобрать с нуля.
+  function resetRules() {
+    var dyn = document.getElementById(DYN_ID);
+    if (dyn) dyn.textContent = '';
+    dynSheet = null;
+    dynCache = {};
+    dynSeq = 0;
+    scanned = [];
+    siteEntries = [];
+    var site = document.getElementById(SITE_ID);
+    if (site) site.textContent = '';
+  }
+
+  function setPalette(src) {
+    var key = JSON.stringify(src || {});
+    if (key === appliedPalette) return;
+    appliedPalette = key;
+    mergePalette(src);
+    resetRules();
+    addBase();
+    scanSheets(true);
+    queueAll();
+    decorate();
+  }
+
   function set(dark) {
     dark = !!dark;
     var de = document.documentElement;
@@ -1393,6 +1490,11 @@
       queueAll();
       decorate();
     }, 120);
+  }
+
+  if (window.__schPalette) {
+    appliedPalette = JSON.stringify(window.__schPalette);
+    mergePalette(window.__schPalette);
   }
 
   function boot() {
@@ -1450,6 +1552,7 @@
     set: set,
     isDark: function () { return isDarkOn; },
     rescan: function () { scanSheets(true); queueAll(); decorate(); },
+    palette: setPalette,
     report: report
   };
 

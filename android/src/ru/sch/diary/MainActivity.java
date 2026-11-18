@@ -102,6 +102,7 @@ public final class MainActivity extends Activity {
     private int ACCENT, ACCENT2, ACCENT_SOFT;
     private int GREEN, AMBER, RED, DIVIDER, STROKE, RULE;
     private int CURRENT, MARK4, ERR_BG, ERR_STROKE;
+    private int TEAL, VIOLET, CDZ_BG;   // CDZ_BG — фон окна задания
     private int ON_ACCENT;               // текст на акцентной плашке
     private int[] SUBJECT_COLORS;
     private boolean darkTheme;
@@ -116,9 +117,115 @@ public final class MainActivity extends Activity {
             0xFF7FB8B8, 0xFFD0919F, 0xFFC99A72
     };
 
-    private void applyPalette(boolean dark) {
-        darkTheme = dark;
-        if (dark) {
+    /**
+     * Палитры тёмных тем. Названия совпадают со значениями в настройках.
+     * Все они тёмные, светлая — только «бумага».
+     */
+    private void applyPalette(String theme) {
+        darkTheme = !"light".equals(theme);
+        // В окне ЦДЗ тёмная тема должна совпадать с темой приложения.
+        CDZ_BG = 0xFF171613;
+        if ("black".equals(theme)) {
+            BG = 0xFF000000;
+            SURFACE = 0xFF0A0A0A;
+            SURFACE2 = 0xFF141414;
+            TEXT = 0xFFE6E6E6;
+            MUTED = 0xFF9A9A9A;
+            ACCENT = 0xFF8AB4F8;
+            ACCENT2 = 0xFFAECBFA;
+            ACCENT_SOFT = 0x2A8AB4F8;
+            GREEN = 0xFF7FC58F;
+            AMBER = 0xFFE0B45C;
+            RED = 0xFFE58C84;
+            TEAL = 0xFF79C0C0;
+            VIOLET = 0xFFBE9FD0;
+            DIVIDER = 0xFF1F1F1F;
+            STROKE = 0xFF2A2A2A;
+            RULE = 0xFF333333;
+            CURRENT = 0xFF101010;
+            MARK4 = 0xFFA9D18E;
+            ERR_BG = 0xFF1C0F0D;
+            ERR_STROKE = 0xFF47231F;
+            ON_ACCENT = 0xFF000000;
+            SUBJECT_COLORS = new int[]{ACCENT, GREEN, AMBER, VIOLET,
+                    TEAL, RED, 0xFFC99A72};
+            CDZ_BG = BG;
+        } else if ("nord".equals(theme)) {
+            BG = 0xFF2E3440;
+            SURFACE = 0xFF3B4252;
+            SURFACE2 = 0xFF434C5E;
+            TEXT = 0xFFECEFF4;
+            MUTED = 0xFFAEB8C8;
+            ACCENT = 0xFF88C0D0;
+            ACCENT2 = 0xFF81A1C1;
+            ACCENT_SOFT = 0x2A88C0D0;
+            GREEN = 0xFFA3BE8C;
+            AMBER = 0xFFEBCB8B;
+            RED = 0xFFBF616A;
+            TEAL = 0xFF8FBCBB;
+            VIOLET = 0xFFB48EAD;
+            DIVIDER = 0xFF434C5E;
+            STROKE = 0xFF4C566A;
+            RULE = 0xFF4C566A;
+            CURRENT = 0xFF3B4252;
+            MARK4 = 0xFFA3BE8C;
+            ERR_BG = 0xFF3A2A2D;
+            ERR_STROKE = 0xFF6E4A50;
+            ON_ACCENT = 0xFF2E3440;
+            SUBJECT_COLORS = new int[]{ACCENT, GREEN, AMBER, VIOLET,
+                    TEAL, 0xFFD08770, 0xFFD9A38A};
+            CDZ_BG = BG;
+        } else if ("catppuccin".equals(theme)) {
+            BG = 0xFF1E1E2E;
+            SURFACE = 0xFF181825;
+            SURFACE2 = 0xFF313244;
+            TEXT = 0xFFCDD6F4;
+            MUTED = 0xFFA6ADC8;
+            ACCENT = 0xFF89B4FA;
+            ACCENT2 = 0xFFB4BEFE;
+            ACCENT_SOFT = 0x2A89B4FA;
+            GREEN = 0xFFA6E3A1;
+            AMBER = 0xFFF9E2AF;
+            RED = 0xFFF38BA8;
+            TEAL = 0xFF94E2D5;
+            VIOLET = 0xFFCBA6F7;
+            DIVIDER = 0xFF313244;
+            STROKE = 0xFF45475A;
+            RULE = 0xFF585B70;
+            CURRENT = 0xFF313244;
+            MARK4 = 0xFFA6E3A1;
+            ERR_BG = 0xFF30222A;
+            ERR_STROKE = 0xFF513245;
+            ON_ACCENT = 0xFF11111B;
+            SUBJECT_COLORS = new int[]{ACCENT, GREEN, AMBER, VIOLET,
+                    TEAL, 0xFFF5C2E7, 0xFFFAB387};
+            CDZ_BG = BG;
+        } else if ("gruvbox".equals(theme)) {
+            BG = 0xFF282828;
+            SURFACE = 0xFF32302F;
+            SURFACE2 = 0xFF3C3836;
+            TEXT = 0xFFEBDBB2;
+            MUTED = 0xFFA89984;
+            ACCENT = 0xFF83A598;
+            ACCENT2 = 0xFF8EC07C;
+            ACCENT_SOFT = 0x2A83A598;
+            GREEN = 0xFFB8BB26;
+            AMBER = 0xFFFABD2F;
+            RED = 0xFFFB4934;
+            TEAL = 0xFF8EC07C;
+            VIOLET = 0xFFD3869B;
+            DIVIDER = 0xFF3C3836;
+            STROKE = 0xFF504945;
+            RULE = 0xFF665C54;
+            CURRENT = 0xFF3C3836;
+            MARK4 = 0xFFB8BB26;
+            ERR_BG = 0xFF3C2020;
+            ERR_STROKE = 0xFF5F2B26;
+            ON_ACCENT = 0xFF282828;
+            SUBJECT_COLORS = new int[]{ACCENT, GREEN, AMBER, VIOLET,
+                    TEAL, 0xFFFB4934, 0xFFFE8019};
+            CDZ_BG = BG;
+        } else if (darkTheme) {
             BG = 0xFF171613;
             SURFACE = 0xFF201E1A;
             SURFACE2 = 0xFF2A2721;
@@ -130,6 +237,8 @@ public final class MainActivity extends Activity {
             GREEN = 0xFF85B394;
             AMBER = 0xFFD6A960;
             RED = 0xFFD9827A;
+            TEAL = 0xFF7FB8B8;
+            VIOLET = 0xFFB79BC4;
             DIVIDER = 0xFF35312A;
             STROKE = 0xFF3E392F;
             RULE = 0xFF4A4438;
@@ -139,6 +248,7 @@ public final class MainActivity extends Activity {
             ERR_STROKE = 0xFF5A3A31;
             ON_ACCENT = 0xFF171613;
             SUBJECT_COLORS = SUBJECT_COLORS_DARK;
+            CDZ_BG = BG;
         } else {
             BG = 0xFFF5EFE2;
             SURFACE = 0xFFFFFCF4;
@@ -151,6 +261,8 @@ public final class MainActivity extends Activity {
             GREEN = 0xFF2F6B4F;
             AMBER = 0xFF9A6A22;
             RED = 0xFFB0403A;
+            TEAL = 0xFF2F6B6B;
+            VIOLET = 0xFF6F4A75;
             DIVIDER = 0xFFD9CEB8;
             STROKE = 0xFFD3C7AE;
             RULE = 0xFFC9BDA6;
@@ -163,14 +275,80 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** Тема из настроек: auto следует за системой, light/dark — принудительно. */
-    private boolean resolveDark() {
+    /** Тема из настроек: auto следует за системой. */
+    private String resolveTheme() {
         String mode = prefs.getString("theme", "auto");
-        if ("dark".equals(mode)) return true;
-        if ("light".equals(mode)) return false;
+        if (!"auto".equals(mode)) return mode;
         int night = getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK;
-        return night == Configuration.UI_MODE_NIGHT_YES;
+        return night == Configuration.UI_MODE_NIGHT_YES ? "dark" : "light";
+    }
+
+    private static final String[] THEME_VALUES = {
+            "auto", "light", "dark", "black", "nord", "catppuccin", "gruvbox"
+    };
+    private static final String[] THEME_LABELS = {
+            "Как в системе", "Светлая бумага", "Тёмная бумага",
+            "Full black", "Nord", "Catppuccin", "Gruvbox"
+    };
+
+    private String themeLabel() {
+        String mode = prefs.getString("theme", "auto");
+        for (int i = 0; i < THEME_VALUES.length; i++) {
+            if (THEME_VALUES[i].equals(mode)) return THEME_LABELS[i];
+        }
+        return THEME_LABELS[0];
+    }
+
+    /** Палитра для окна ЦДЗ — те же ключи, что ждёт cdz-paper.js. */
+    private String paletteJson() {
+        StringBuilder b = new StringBuilder("{");
+        colorField(b, "bg", BG);
+        colorField(b, "surface", SURFACE);
+        colorField(b, "surface2", SURFACE2);
+        colorField(b, "ink", TEXT);
+        colorField(b, "muted", MUTED);
+        colorField(b, "accent", ACCENT);
+        colorField(b, "accentBg", ACCENT);
+        colorField(b, "onAccent", ON_ACCENT);
+        colorField(b, "accentSoft", ACCENT_SOFT);
+        colorField(b, "line", STROKE);
+        colorField(b, "divider", DIVIDER);
+        colorField(b, "rule", RULE);
+        colorField(b, "current", CURRENT);
+        colorField(b, "green", GREEN);
+        colorField(b, "amber", AMBER);
+        colorField(b, "red", RED);
+        colorField(b, "teal", TEAL);
+        colorField(b, "violet", VIOLET);
+        colorField(b, "errBg", ERR_BG);
+        colorField(b, "errStroke", ERR_STROKE);
+        colorField(b, "mark", MARK4);
+        b.append('}');
+        return b.toString();
+    }
+
+    private static void colorField(StringBuilder b, String key, int argb) {
+        b.append('"').append(key).append("\":\"").append(cssColor(argb))
+                .append("\",");
+    }
+
+    private static String cssColor(int argb) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
+        int b = argb & 0xFF;
+        if (a == 0xFF) return String.format(Locale.US, "#%02X%02X%02X", r, g, b);
+        float al = Math.round(a / 255f * 1000f) / 1000f;
+        return "rgba(" + r + "," + g + "," + b + "," + al + ")";
+    }
+
+    private static int dialogOverlay(String theme) {
+        if ("black".equals(theme)) return R.style.OverlayBlack;
+        if ("nord".equals(theme)) return R.style.OverlayNord;
+        if ("catppuccin".equals(theme)) return R.style.OverlayCatppuccin;
+        if ("gruvbox".equals(theme)) return R.style.OverlayGruvbox;
+        return 0;
     }
 
     private static final String[] MONTHS = {
@@ -314,12 +492,17 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         prefs = getSharedPreferences("sch", MODE_PRIVATE);
-        boolean dark = resolveDark();
+        String theme = resolveTheme();
+        boolean dark = !"light".equals(theme);
         String cdzMode = prefs.getString("cdz_theme", "auto");
         cdzDark = "dark".equals(cdzMode) || ("auto".equals(cdzMode) && dark);
-        applyPalette(dark);
+        applyPalette(theme);
         setTheme(dark ? R.style.AppThemeDark : R.style.AppTheme);
+        // Диалоги рисуются системным стилем, поэтому тему им задаём отдельно.
+        int overlay = dialogOverlay(theme);
+        if (overlay != 0) getTheme().applyStyle(overlay, true);
         super.onCreate(state);
+        getWindow().setBackgroundDrawable(new ColorDrawable(BG));
 
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
@@ -2928,18 +3111,16 @@ public final class MainActivity extends Activity {
     }
 
     private void themeDialog() {
-        final String[] labels = {"Как в системе", "Светлая бумага", "Тёмная бумага"};
-        final String[] values = {"auto", "light", "dark"};
         String mode = prefs.getString("theme", "auto");
         int sel = 0;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i].equals(mode)) sel = i;
+        for (int i = 0; i < THEME_VALUES.length; i++) {
+            if (THEME_VALUES[i].equals(mode)) sel = i;
         }
         new AlertDialog.Builder(this)
                 .setTitle("Тема")
-                .setSingleChoiceItems(labels, sel, new DialogInterface.OnClickListener() {
+                .setSingleChoiceItems(THEME_LABELS, sel, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int which) {
-                        prefs.edit().putString("theme", values[which]).apply();
+                        prefs.edit().putString("theme", THEME_VALUES[which]).apply();
                         d.dismiss();
                         recreate();
                     }
@@ -3021,7 +3202,7 @@ public final class MainActivity extends Activity {
                 }));
         actions.addView(actionDivider());
         actions.addView(actionRow(R.drawable.ic_theme, "Тема",
-                darkTheme ? "Тёмная бумага" : "Светлая бумага", false, new Runnable() {
+                themeLabel(), false, new Runnable() {
                     @Override public void run() { themeDialog(); }
                 }));
         actions.addView(actionDivider());
@@ -6243,14 +6424,14 @@ public final class MainActivity extends Activity {
         s.setUserAgentString(Api.UA);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
 
-        web.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
+        web.setBackgroundColor(cdzDark ? CDZ_BG : BG);
 
         // Своя заставка вместо «внутренней» загрузки ЦДЗ: та появляется
         // белой полосой в верхней части экрана, пока сайт не докрасился.
         final LinearLayout loading = new LinearLayout(this);
         loading.setOrientation(LinearLayout.VERTICAL);
         loading.setGravity(Gravity.CENTER);
-        loading.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
+        loading.setBackgroundColor(cdzDark ? CDZ_BG : BG);
 
         final ProgressBar spinner = new ProgressBar(this);
         spinner.setIndeterminateTintList(
@@ -6289,8 +6470,8 @@ public final class MainActivity extends Activity {
                 themeBtn.setColorFilter(cdzDark ? ACCENT : MUTED);
                 themeBtn.setContentDescription(
                         cdzDark ? "Светлая тема" : "Тёмная тема");
-                web.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
-                loading.setBackgroundColor(cdzDark ? 0xFF171613 : BG);
+                web.setBackgroundColor(cdzDark ? CDZ_BG : BG);
+                loading.setBackgroundColor(cdzDark ? CDZ_BG : BG);
                 web.evaluateJavascript("window.__schPaper&&window.__schPaper.set("
                         + cdzDark + ")", null);
             }
@@ -6363,7 +6544,8 @@ public final class MainActivity extends Activity {
                 String js = cdzTheme();
                 if (!js.isEmpty()) {
                     view.evaluateJavascript(
-                            "window.__schDark=" + cdzDark + ";" + js, null);
+                            "window.__schPalette=" + paletteJson() + ";"
+                            + "window.__schDark=" + cdzDark + ";" + js, null);
                 }
                 view.postDelayed(new Runnable() {
                     @Override public void run() {
@@ -6420,7 +6602,7 @@ public final class MainActivity extends Activity {
         d.setContentView(root);
         Window w = d.getWindow();
         if (w != null) {
-            w.setBackgroundDrawable(new ColorDrawable(cdzDark ? 0xFF171613 : BG));
+            w.setBackgroundDrawable(new ColorDrawable(cdzDark ? CDZ_BG : BG));
             w.setDimAmount(0.6f);
             // Во весь экран: при высоте 97 % сверху оставалась полоска
             // предыдущего экрана, из-за которой окно выглядело кривым.
@@ -6797,7 +6979,9 @@ public final class MainActivity extends Activity {
                         + "домашнего задания, плашка «нет связи» с временем данных.\n\n"
                         + "2.5: тёмная тема ЦДЗ переведена на токены дизайн-системы "
                         + "(карточки, рамки ответов, экран результата). Долгое нажатие "
-                        + "на луну в окне задания — отчёт о том, что осталось светлым.")
+                        + "на луну в окне задания — отчёт о том, что осталось светлым.\n\n"
+                        + "2.6: темы оформления — Full black, Nord, Catppuccin и Gruvbox. "
+                        + "Тема применяется и к приложению, и к окну задания.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }

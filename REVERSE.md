@@ -254,3 +254,33 @@ cookies из профиля Chromium (на Android Chromium недоступен
   тоже перекрашиваются, иначе половина сайта осталась бы белой. API:
   `window.__schPaper.set(true)`,
   `.isDark()`, `.rescan()`.
+
+### 2.6: темы оформления
+
+Кроме светлой и «тёмной бумаги» появились четыре темы: Full black, Nord,
+Catppuccin (Mocha) и Gruvbox (dark). Настройка хранится в `theme`:
+`auto`, `light`, `dark`, `black`, `nord`, `catppuccin`, `gruvbox`.
+
+  - `applyPalette(theme)` в `MainActivity` задаёт один и тот же набор ролей
+    (BG, SURFACE, TEXT, ACCENT, STROKE, RULE, GREEN/AMBER/RED/TEAL/VIOLET…)
+    для всех тёмных тем; экраны приложения уже собраны на этих полях, поэтому
+    перекрашиваются целиком.
+  - Окно ЦДЗ получает палитру как `window.__schPalette` перед инъекцией
+    `cdz-paper.js`. Ключи совпадают с ролями движка: `bg`, `surface`,
+    `surface2`, `ink`, `muted`, `accent`, `onAccent`, `accentSoft`, `line`,
+    `divider`, `rule`, `current`, `green`, `amber`, `red`, `teal`, `violet`,
+    `errBg`, `errStroke`, `mark`.
+  - Чтобы не дублировать CSS под каждую тему, базовый лист собирается из
+    литералов тёмной бумаги (`PAPER_ROLE`) и перекрашивается `recolorCss()`
+    в цвета активной палитры. Недостающие ключи берутся из тёмной бумаги,
+    производные (`accentBg`, `onAccent`, `accentSoft`) считаются из акцента.
+  - `__schPaper.palette(src)` меняет тему на лету: сбрасывает листы
+    `sch-paper-site`/`sch-paper-dyn`, их кэши и заново сканирует стили сайта.
+    `palette({})` возвращает «тёмную бумагу». Повторная инъекция скрипта
+    читает `__schPalette` и сохраняет выбранную тему.
+  - Диалоги рисуются системной темой, поэтому к `AppThemeDark` добавляется
+    наложение `OverlayBlack/Nord/Catppuccin/Gruvbox` (`Theme.applyStyle`) с
+    `alertDialogTheme` и своей рамкой `dialog_bg_*.xml`.
+  - Проверки движка (126 штук) — `/data/data/com.termux/files/usr/tmp/levtest/cdztest.js`:
+    Nord на живом DOM, смена на Full black и обратно, возврат к бумаге,
+    сохранение темы при повторной инъекции.
