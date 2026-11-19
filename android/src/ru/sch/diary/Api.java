@@ -644,9 +644,37 @@ final class Api {
         sendJson("PUT", EJ + "/student_work/" + enc(workId) + "/variant", body);
     }
 
-    /** Заливает байты в хранилище по ссылке из storage_access. */
+    /**
+     * Заливает байты в хранилище по ссылке из storage_access.
+     * Мобильный МЭШ шлёт в хранилище те же общие заголовки, что и в API
+     * (client-type, X-Mes-Subsystem, Profile-Id, X-Mes-RoleId), — без них
+     * хранилище может отклонить загрузку, хотя сессия живая.
+     */
     void uploadFile(String link, String uploadToken, String fileName,
                     String mime, byte[] data) throws ApiException {
+        if (link == null) link = "";
+        link = link.trim();
+        if (!link.startsWith("http://") && !link.startsWith("https://")) {
+            link = link.startsWith("/") ? BASE + link : BASE + "/" + link;
+        }
+
+        ApiException last = null;
+        // Один повтор на сетевой сбое: фото уже сжато, повтор дешёвый.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                uploadOnce(link, uploadToken, fileName, mime, data);
+                return;
+            } catch (ApiException e) {
+                last = e;
+                if (e.status != 0) throw e;
+                sleep(700);
+            }
+        }
+        throw last == null ? new ApiException("не загрузил файл") : last;
+    }
+
+    private void uploadOnce(String link, String uploadToken, String fileName,
+                            String mime, byte[] data) throws ApiException {
         String boundary = "----sch" + System.currentTimeMillis();
         String safeName = fileName.replace("\"", "");
         ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -672,6 +700,18 @@ final class Api {
             c.setDoOutput(true);
             c.setRequestProperty("User-Agent", UA);
             c.setRequestProperty("Accept", "application/json, text/plain, */*");
+            c.setRequestProperty("Accept-Language", "ru");
+            c.setRequestProperty("Referer", BASE + "/diary");
+            c.setRequestProperty("client-type", "diary-mobile");
+            c.setRequestProperty("X-Mes-Subsystem", "familymp");
+            c.setRequestProperty("X-Mes-RoleId", roleId());
+            String pid = "";
+            try {
+                pid = studentId();
+            } catch (Exception ignored) {
+                // заголовок не критичен, если профиль не успел загрузиться
+            }
+            if (!pid.isEmpty()) c.setRequestProperty("Profile-Id", pid);
             c.setRequestProperty("Authorization", "Bearer " + uploadToken);
             c.setRequestProperty("Content-Type",
                     "multipart/form-data; boundary=" + boundary);
@@ -685,14 +725,31 @@ final class Api {
             String text = readAll(code >= 400
                     ? c.getErrorStream() : c.getInputStream());
             if (code < 200 || code >= 300) {
-                throw new ApiException("хранилище ответило HTTP " + code
-                        + ": " + clip(text, 200));
+                throw new ApiException(code, "хранилище ответило HTTP " + code
+                        + ": " + serverMessage(text));
             }
         } catch (IOException e) {
             throw new ApiException("не загрузил файл: " + e.getMessage() + NET_HINT);
         } finally {
             if (c != null) c.disconnect();
         }
+    }
+
+    /** Человекочитаемая причина из тела ошибки МЭШ. */
+    static String serverMessage(String text) {
+        if (text == null || text.trim().isEmpty()) return "пустой ответ";
+        try {
+            JSONObject o = new JSONObject(text);
+            String m = s(o, "message");
+            if (m.trim().isEmpty()) m = s(o, "detail");
+            if (m.trim().isEmpty()) {
+                JSONObject err = o.optJSONObject("error");
+                if (err != null) m = s(err, "message");
+            }
+            if (!m.trim().isEmpty()) return m.trim();
+        } catch (Exception ignored) {
+        }
+        return clip(text, 300);
     }
 
     private JSONObject sendJson(String method, String url, JSONObject body)
@@ -732,7 +789,7 @@ final class Api {
             String text = readAll(code >= 400
                     ? c.getErrorStream() : c.getInputStream());
             if (code < 200 || code >= 300) {
-                throw new ApiException(code, "HTTP " + code + ": " + clip(text, 400));
+                throw new ApiException(code, "HTTP " + code + ": " + serverMessage(text));
             }
             if (text.trim().isEmpty()) return new JSONObject();
             return new JSONObject(text);

@@ -6912,7 +6912,15 @@ public final class MainActivity extends Activity {
                     ? null : studentWork.optJSONArray("files");
             boolean hasFiles = files != null && files.length() > 0;
 
-            if (!window && !hasFiles) return;
+            if (!window && !hasFiles) {
+                // Раньше секция просто исчезала, и казалось, что прикрепить
+                // нечего. Показываем то же объяснение, что и в МЭШ.
+                TextView hint = tv("Загрузить работу можно во время урока "
+                        + "и в течение 5 минут после завершения", 11, MUTED, false);
+                hint.setPadding(0, dp(12), 0, dp(2));
+                attachBox.addView(hint);
+                return;
+            }
 
             if (hasFiles) {
                 TextView lbl = tv("Работа на проверке", 11, MUTED, true);
@@ -7189,13 +7197,15 @@ public final class MainActivity extends Activity {
                                 if (e.status == 409) {
                                     workId = api.existingWorkId(lessonId);
                                 } else {
-                                    throw e;
+                                    throw new Api.ApiException(e.status,
+                                            "не удалось создать работу: "
+                                                    + e.getMessage());
                                 }
                             }
                             if (workId.isEmpty()) {
-                                throw new Api.ApiException("МЭШ не вернул id работы "
-                                        + "(работа уже есть, но id не пришёл — "
-                                        + "переоткройте урок)");
+                                throw new Api.ApiException(
+                                        "работа уже создана, но МЭШ не отдал её id — "
+                                                + "закройте и снова откройте урок");
                             }
                         }
                         if (var != null
@@ -7208,19 +7218,37 @@ public final class MainActivity extends Activity {
 
                         int order = nextOrder(studentWork);
                         JSONArray regs = new JSONArray();
+                        List<PickedPhoto> done = new ArrayList<>();
                         int failed = 0;
                         String firstError = null;
                         for (PickedPhoto p : files) {
                             try {
-                                JSONObject acc = api.storageAccess(workId);
+                                JSONObject acc;
+                                try {
+                                    acc = api.storageAccess(workId);
+                                } catch (Api.ApiException e) {
+                                    if (e.status == 400) {
+                                        // 400 — работа уже сдана или дедлайн прошёл.
+                                        throw new Api.ApiException(e.status,
+                                                "МЭШ не открыл хранилище: "
+                                                        + e.getMessage());
+                                    }
+                                    acc = api.storageAccess(workId);  // сеть — один повтор
+                                }
                                 String link = Api.s(acc, "file_link");
                                 String tok = Api.s(acc, "token");
                                 String uuid = Api.s(acc, "file_uuid");
                                 if (link.isEmpty() || tok.isEmpty() || uuid.isEmpty()) {
                                     throw new Api.ApiException(
-                                            "нет доступа к хранилищу: " + acc);
+                                            "хранилище не выдало ссылку на файл");
                                 }
-                                api.uploadFile(link, tok, p.name, "image/jpeg", p.data);
+                                try {
+                                    api.uploadFile(link, tok, p.name,
+                                            "image/jpeg", p.data);
+                                } catch (Exception e) {
+                                    throw new Api.ApiException("фото не загрузилось: "
+                                            + (e.getMessage() == null ? "?" : e.getMessage()));
+                                }
                                 String ext = "jpg";
                                 int dot = p.name.lastIndexOf('.');
                                 if (dot > 0 && dot < p.name.length() - 1) {
@@ -7233,31 +7261,46 @@ public final class MainActivity extends Activity {
                                 Api.put(f, "size", p.data.length);
                                 Api.put(f, "extension", ext);
                                 regs.put(f);
+                                done.add(p);
                             } catch (Exception e) {
                                 failed++;
                                 if (firstError == null) firstError = e.getMessage();
                             }
                         }
 
-                        if (regs.length() > 0) api.upsertFiles(workId, regs);
+                        if (regs.length() > 0) {
+                            try {
+                                api.upsertFiles(workId, regs);
+                            } catch (Exception e) {
+                                throw new Api.ApiException(
+                                        "файлы загружены, но МЭШ не принял их: "
+                                                + (e.getMessage() == null
+                                                ? "?" : e.getMessage()));
+                            }
+                        }
 
+                        final List<PickedPhoto> sent = done;
                         final int bad = failed;
                         final String why = firstError;
                         ui.post(new Runnable() {
                             @Override public void run() {
                                 pd.dismiss();
                                 uploading = false;
+                                if (!sent.isEmpty()) pending.removeAll(sent);
                                 if (bad == files.size()) {
-                                    if (why == null || why.isEmpty()) {
-                                        toast("Не удалось отправить работу");
-                                    } else {
-                                        errorDialog(new Exception(why));
+                                    String msg = why == null || why.isEmpty()
+                                            ? "Не удалось отправить работу" : why;
+                                    errorDialog(new Exception(msg));
+                                } else if (bad > 0) {
+                                    String msg = "Отправлено " + sent.size()
+                                            + " из " + files.size()
+                                            + " фото. Остальные можно попробовать ещё раз.";
+                                    if (why != null && !why.isEmpty()) {
+                                        msg += "\n\n" + why;
                                     }
+                                    errorDialog(new Exception(msg));
                                 } else {
-                                    pending.clear();
-                                    toast(bad == 0
-                                            ? "Работа отправлена на проверку"
-                                            : "Отправлено, но " + bad + " фото не загрузились");
+                                    toast("Работа отправлена на проверку");
                                 }
                                 loadDetails();
                                 dayData = null;
@@ -7348,15 +7391,31 @@ public final class MainActivity extends Activity {
         }
 
         private boolean isWorkWindowOpen() {
+            // Нативное окно: begin_utc … end_utc + 5 минут. Это секунды UTC,
+            // поэтому неважно, в каком часовом поясе телефон и как он
+            // округляет локальное время.
+            long now = System.currentTimeMillis();
+            long begin = Api.numLong(details, "begin_utc") * 1000L;
+            long end = Api.numLong(details, "end_utc") * 1000L;
+            if (begin <= 0 || end <= 0) {
+                begin = Api.numLong(lesson, "begin_utc") * 1000L;
+                end = Api.numLong(lesson, "end_utc") * 1000L;
+            }
+            if (begin > 0 && end > 0) {
+                return now >= begin && now <= end + 5 * 60 * 1000L;
+            }
+
+            // Запасной путь для ответов без UTC-полей: локальные HH:MM.
             String date = Api.s(details, "date");
+            if (date.isEmpty()) date = Api.s(lesson, "date");
             if (!date.isEmpty() && !date.equals(today())) return false;
-            String begin = Api.s(details, "begin_time");
-            String end = Api.s(details, "end_time");
-            if (begin.isEmpty()) begin = Api.s(lesson, "begin");
-            if (end.isEmpty()) end = Api.s(lesson, "end");
-            if (begin.isEmpty() || end.isEmpty()) return false;
-            int now = nowMinutes();
-            return now >= toMinutes(begin) && now <= toMinutes(end) + 5;
+            String beginTime = Api.s(details, "begin_time");
+            String endTime = Api.s(details, "end_time");
+            if (beginTime.isEmpty()) beginTime = Api.s(lesson, "begin");
+            if (endTime.isEmpty()) endTime = Api.s(lesson, "end");
+            if (beginTime.isEmpty() || endTime.isEmpty()) return false;
+            int nowMin = nowMinutes();
+            return nowMin >= toMinutes(beginTime) && nowMin <= toMinutes(endTime) + 5;
         }
     }
 
@@ -8673,7 +8732,14 @@ public final class MainActivity extends Activity {
                         + "2.16: те же периоды теперь и на «Оценках», и в "
                         + "домашнем задании: неделя, месяц, триместр, а у "
                         + "оценок ещё и год. Подписи в шапке и счётчики "
-                        + "тоже называют период, а не число дней.")
+                        + "тоже называют период, а не число дней.\n\n"
+                        + "2.17: прикрепление фото работы стало надёжнее. "
+                        + "Окно отправки считается по UTC-времени урока, как в "
+                        + "МЭШ, а загрузка в хранилище идёт с теми же "
+                        + "заголовками, что у мобильного приложения. Если окно "
+                        + "закрыто, карточка объясняет, когда можно отправить "
+                        + "работу. При ошибке видно, на каком шаге она "
+                        + "случилась, и неудачные фото остаются для повтора.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }

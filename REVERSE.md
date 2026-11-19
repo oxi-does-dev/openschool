@@ -86,8 +86,10 @@ Android+VPN зависает на AAAA-записи `school.mos.ru`.
 
 1. `storage_access` → `file_uuid` + `file_link` + `token`;
 2. `multipart/form-data` POST на `file_link`, поле `content`, заголовки
-   `Authorization: Bearer <token>` и `Content-Type: multipart/form-data`
-   (отдельный HTTP-клиент, без `Profile-Id`);
+   `Authorization: Bearer <token>` и `Content-Type: multipart/form-data`.
+   Хранилище — отдельный HTTP-клиент, но МЭШ навешивает на него те же
+   `commonHeaders`: `client-type: diary-mobile`, `X-Mes-Subsystem`,
+   `Accept-Language: ru`, `Profile-Id`, `X-Mes-RoleId`;
 3. `POST /files/by_student_work/{id}` с `{files:[…]}` — **только новые файлы**:
    - только что загруженный: `{file_uuid, file_name, size, order_number, extension}`;
    - уже прикреплённый: `{file_uuid, order_number}`;
@@ -525,3 +527,24 @@ contenteditable, select/option и красный неверный ответ. К
 Домашнее задание в «Итогах» по-прежнему берётся за фиксированные 30 дней
 назад и 2 недели вперёд — там это подписано прямо в карточке, а не выдаётся
 за выбранный период.
+
+### 2.17: надёжное прикрепление фото работы
+
+Нативное окно отправки считается не по локальным `HH:MM`, а по
+`begin_utc`/`end_utc` из `GET /lesson_schedule_items/{id}`: это секунды UTC,
+поэтому часовой пояс телефона и переход на летнее время ни на что не влияют.
+Окно — от начала урока до `end_utc + 5 минут`
+(`ACTIVE_EDIT_AFTER_LESSON_END_TIME_MS`).
+
+Загрузка в хранилище теперь повторяет мобильный клиент не только телом
+multipart, но и заголовками: `client-type: diary-mobile`,
+`X-Mes-Subsystem: familymp`, `Accept-Language: ru`, `Profile-Id`,
+`X-Mes-RoleId`. Относительный `file_link` достраивается от
+`https://school.mos.ru`, сетевой сбой повторяется один раз.
+
+Если окно закрыто, карточка урока больше не прячет секцию целиком, а пишет
+«Загрузить работу можно во время урока и в течение 5 минут после
+завершения» — как в МЭШ. Ошибки разделены по шагам (создание работы,
+доступ к хранилищу, загрузка фото, привязка файлов), а фото, которые не
+удалось отправить, остаются в списке для повтора, вместо того чтобы
+пропадать вместе с успешными.
