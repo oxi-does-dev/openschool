@@ -2151,9 +2151,14 @@ public final class MainActivity extends Activity {
             JSONArray cached = cacheGetArray(key);
             if (cached != null) {
                 finalData = cached;
-                finalLoading = false;
                 if (tab == TAB_MARKS) renderTab();
-                return;
+                // Итоговые собираются по всем предметам — это десятки
+                // запросов. Свежий кэш не трогаем, старый обновляем молча.
+                long at = prefs.getLong(key + "#at", 0L);
+                if (System.currentTimeMillis() - at < 10 * 60 * 1000L) {
+                    finalLoading = false;
+                    return;
+                }
             }
         }
         if (tab == TAB_MARKS && marksView == 2) renderTab();
@@ -4078,6 +4083,18 @@ public final class MainActivity extends Activity {
     }
 
     private void fetchDay(final String date) {
+        // Страховка на случай, когда данные в памяти уже сброшены, а кэш
+        // остался: сначала карточки из кэша, затем тихое обновление.
+        if (dayData == null || !date.equals(Api.s(dayData, "date"))) {
+            JSONObject cached = cacheGet("day3:" + date);
+            if (cached != null) {
+                dayData = cached;
+                dayError = null;
+                dayAuth = false;
+                if (tab == TAB_DAY && date.equals(currentDate)) renderTab();
+            }
+        }
+
         final int gen = ++dayGen;
         dayLoading = true;
 
@@ -4257,6 +4274,22 @@ public final class MainActivity extends Activity {
         final String start = weekStart != null ? weekStart : mondayOf(today());
         weekStart = start;
         if (!force && weekData != null && start.equals(weekLoaded)) return;
+
+        // Как и на остальных вкладках: если неделя уже лежит в кэше,
+        // показываем её сразу, а сеть догружает молча.
+        if (!force && !start.equals(weekLoaded)) {
+            String raw = prefs.getString("week3:" + start, null);
+            if (raw != null) {
+                try {
+                    weekData = new JSONArray(raw);
+                    weekLoaded = start;
+                    weekError = null;
+                    weekAuth = false;
+                    if (tab == TAB_WEEK) renderTab();
+                } catch (Exception ignored) {
+                }
+            }
+        }
 
         final int gen = ++weekGen;
         weekLoading = true;
@@ -6085,11 +6118,11 @@ public final class MainActivity extends Activity {
             String raw = prefs.getString("profile", null);
             if (raw != null) {
                 try {
+                    // Показываем сохранённый профиль сразу, но сеть всё
+                    // равно спрашиваем: имя, класс и школа могли измениться.
                     applyProfile(new JSONObject(raw));
-                    profileLoading = false;
                     if (tab == TAB_MORE) renderTab();
                     else updateChrome();
-                    return;
                 } catch (Exception ignored) {
                 }
             }
@@ -8326,7 +8359,11 @@ public final class MainActivity extends Activity {
                         + "2.11: в результатах прохождений ЦДЗ текст ответа "
                         + "больше не чёрный на тёмном фоне: поле ввода следует "
                         + "за темой, а красные неверные ответы остаются "
-                        + "красными.")
+                        + "красными.\n\n"
+                        + "2.12: если данные уже есть в кэше, они показываются "
+                        + "сразу, без пустых заглушек, а сеть догружает их "
+                        + "молча. Это работает на всех вкладках, включая "
+                        + "неделю, профиль и итоговые оценки.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
