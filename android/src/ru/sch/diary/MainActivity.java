@@ -414,6 +414,14 @@ public final class MainActivity extends Activity {
             "Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"
     };
 
+    // Одна сетка на всё приложение: поля экрана, внутренние поля карточек
+    // и радиус скругления. Раньше в каждом списке были свои 12–18 dp,
+    // из-за этого карточки «плясали» по ширине текста.
+    private static final int PAD_SCREEN = 16;
+    private static final int PAD_CARD_H = 14;
+    private static final int PAD_CARD_V = 12;
+    private static final int RADIUS_CARD = 3;
+
     private static final int REQ_IMPORT = 41;
     private static final int REQ_PICK_PHOTOS = 42;
     private static final int REQ_CAMERA = 43;
@@ -730,7 +738,7 @@ public final class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(18), dp(10), dp(10), dp(8));
+        bar.setPadding(dp(PAD_SCREEN), dp(10), dp(10), dp(8));
 
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
@@ -786,7 +794,7 @@ public final class MainActivity extends Activity {
         navBar = new LinearLayout(this);
         navBar.setOrientation(LinearLayout.HORIZONTAL);
         navBar.setBackgroundColor(BG);
-        navBar.setPadding(dp(14), dp(2), dp(14), dp(8));
+        navBar.setPadding(dp(8), dp(3), dp(8), dp(10));
         root.addView(navBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -810,13 +818,13 @@ public final class MainActivity extends Activity {
         LinearLayout item = new LinearLayout(this);
         item.setOrientation(LinearLayout.VERTICAL);
         item.setGravity(Gravity.CENTER);
-        item.setPadding(0, dp(7), 0, dp(3));
+        item.setPadding(0, dp(8), 0, dp(4));
         item.setClickable(true);
         item.setBackground(rippleBg(0x00000000, 8));
 
-        ImageView ic = icon(iconRes, color, 20);
+        ImageView ic = icon(iconRes, color, 22);
         item.addView(ic);
-        TextView t = tvSans(label, 10, color, sel);
+        TextView t = tvSans(label, 11, color, sel);
         t.setGravity(Gravity.CENTER);
         t.setPadding(0, dp(2), 0, 0);
         t.setSingleLine(true);
@@ -825,8 +833,8 @@ public final class MainActivity extends Activity {
 
         View underline = new View(this);
         underline.setBackgroundColor(sel ? TEXT : 0x00000000);
-        LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(dp(20), dp(2));
-        ulp.topMargin = dp(3);
+        LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(dp(22), dp(2));
+        ulp.topMargin = dp(4);
         item.addView(underline, ulp);
 
         item.setOnClickListener(new View.OnClickListener() {
@@ -929,7 +937,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(2), dp(12), dp(28));
+        content.setPadding(dp(PAD_SCREEN), dp(2), dp(PAD_SCREEN), dp(28));
 
         if (dayAuth && dayData == null) {
             content.addView(authCard("Нужен вход в МЭШ",
@@ -1170,7 +1178,7 @@ public final class MainActivity extends Activity {
         pill.setOrientation(LinearLayout.HORIZONTAL);
         pill.setGravity(Gravity.CENTER_VERTICAL);
         pill.setPadding(dp(12), dp(7), dp(12), dp(7));
-        pill.setBackground(roundBg(SURFACE2, 3, STROKE));
+        pill.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
 
         View dot = new View(this);
         dot.setBackground(roundBg(dotColor, 4, 0));
@@ -1243,10 +1251,10 @@ public final class MainActivity extends Activity {
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setPadding(dp(12), dp(11), dp(12), dp(11));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
         card.setBackground(current
-                ? roundBg(CURRENT, 2, ACCENT)
-                : roundBg(SURFACE, 2, STROKE));
+                ? roundBg(CURRENT, RADIUS_CARD, ACCENT)
+                : roundBg(SURFACE, RADIUS_CARD, STROKE));
         card.setClickable(true);
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1261,11 +1269,9 @@ public final class MainActivity extends Activity {
         timeCol.setOrientation(LinearLayout.VERTICAL);
         timeCol.setPadding(0, dp(1), dp(6), 0);
         TextView begin = tv(Api.s(l, "begin"), 13, current ? ACCENT : TEXT, true);
-        begin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         begin.setSingleLine(true);
         String endTime = Api.s(l, "end");
         TextView end = tv(endTime.isEmpty() ? "" : "до " + endTime, 9, MUTED, false);
-        end.setTypeface(Typeface.MONOSPACE);
         end.setSingleLine(true);
         timeCol.addView(begin);
         timeCol.addView(end);
@@ -1381,8 +1387,8 @@ public final class MainActivity extends Activity {
     private View extraCard(final JSONObject l) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        card.setBackground(roundBg(SURFACE, 3, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         card.setClickable(true);
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1394,12 +1400,10 @@ public final class MainActivity extends Activity {
 
         LinearLayout timeCol = new LinearLayout(this);
         timeCol.setOrientation(LinearLayout.VERTICAL);
-        TextView begin = tv(Api.s(l, "begin"), 12, TEXT, true);
-        begin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        TextView begin = tv(Api.s(l, "begin"), 13, TEXT, true);
         begin.setSingleLine(true);
         String endTime = Api.s(l, "end");
         TextView end = tv(endTime.isEmpty() ? "" : "до " + endTime, 9, MUTED, false);
-        end.setTypeface(Typeface.MONOSPACE);
         end.setSingleLine(true);
         timeCol.addView(begin);
         timeCol.addView(end);
@@ -1439,8 +1443,8 @@ public final class MainActivity extends Activity {
     private View homeworkCard(final JSONObject h) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(roundBg(SURFACE, 2, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         card.setClickable(true);
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1582,7 +1586,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(2), dp(12), dp(28));
+        content.setPadding(dp(PAD_SCREEN), dp(2), dp(PAD_SCREEN), dp(28));
 
         if (hwAuth && hwData == null) {
             content.addView(authCard("Нужен вход в МЭШ",
@@ -1717,7 +1721,7 @@ public final class MainActivity extends Activity {
         t.setEllipsize(TextUtils.TruncateAt.END);
         t.setMinHeight(dp(40));
         t.setPadding(dp(8), dp(9), dp(8), dp(9));
-        t.setBackground(roundBg(SURFACE, 3, STROKE));
+        t.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         t.setClickable(true);
         t.setContentDescription(label + ": нажмите, чтобы выбрать");
         return t;
@@ -1865,7 +1869,7 @@ public final class MainActivity extends Activity {
         int color = percent >= 80 ? GREEN : percent >= 50 ? AMBER : RED;
 
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(16), dp(13), dp(16), dp(13));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
@@ -2038,7 +2042,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(2), dp(12), dp(28));
+        content.setPadding(dp(PAD_SCREEN), dp(2), dp(PAD_SCREEN), dp(28));
 
         if (marksView == 2) {
             if (finalAuth && finalData == null) {
@@ -2617,8 +2621,8 @@ public final class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackground(roundBg(SURFACE, 3, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clp.bottomMargin = dp(10);
@@ -2681,8 +2685,8 @@ public final class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(14), dp(10), dp(14), dp(10));
-        card.setBackground(roundBg(SURFACE, 2, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clp.bottomMargin = dp(6);
@@ -3678,7 +3682,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(6), dp(12), dp(28));
+        content.setPadding(dp(PAD_SCREEN), dp(6), dp(PAD_SCREEN), dp(28));
 
         content.addView(profileCard());
         if (childrenCount() > 0 && (parentAccount || childrenCount() > 1)) {
@@ -3689,7 +3693,7 @@ public final class MainActivity extends Activity {
         content.addView(sectionHeader("ДЕЙСТВИЯ", 0));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
-        actions.setBackground(roundBg(SURFACE, 3, STROKE));
+        actions.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
 
         actions.addView(actionRow(R.drawable.ic_login, "Войти в МЭШ",
                 "Открыть страницу входа в приложении", false, new Runnable() {
@@ -3814,7 +3818,7 @@ public final class MainActivity extends Activity {
         input.setTextColor(TEXT);
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         input.setSingleLine(true);
-        input.setBackground(roundBg(SURFACE2, 3, STROKE));
+        input.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
         input.setPadding(dp(12), dp(10), dp(12), dp(10));
         LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -4143,8 +4147,8 @@ public final class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(roundBg(SURFACE, 3, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_H), dp(PAD_CARD_H), dp(PAD_CARD_H));
+        card.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clp.bottomMargin = dp(8);
@@ -4215,8 +4219,8 @@ public final class MainActivity extends Activity {
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(12), dp(16), dp(12));
-        card.setBackground(roundBg(SURFACE, 3, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clp.bottomMargin = dp(8);
@@ -4257,7 +4261,7 @@ public final class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(16), dp(12), dp(14), dp(12));
+        row.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
         row.setClickable(true);
         row.setBackground(rippleBg(0x00000000, 0));
 
@@ -4390,7 +4394,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(2), dp(12), dp(28));
+        content.setPadding(dp(PAD_SCREEN), dp(2), dp(PAD_SCREEN), dp(28));
 
         if (weekAuth && weekData == null) {
             content.addView(authCard("Нужен вход в МЭШ",
@@ -4640,9 +4644,9 @@ public final class MainActivity extends Activity {
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(9), dp(12), dp(10));
-        card.setBackground(isToday ? roundBg(CURRENT, 3, ACCENT)
-                : roundBg(SURFACE, 3, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(isToday ? roundBg(CURRENT, RADIUS_CARD, ACCENT)
+                : roundBg(SURFACE, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -4741,7 +4745,7 @@ public final class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(14), dp(12), dp(14), dp(10));
-        box.setBackground(roundBg(SURFACE, 3, STROKE));
+        box.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -4911,8 +4915,7 @@ public final class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(6), 0, 0);
 
-        TextView time = tv(Api.s(l, "begin"), 11, MUTED, false);
-        time.setTypeface(Typeface.MONOSPACE);
+        TextView time = tv(Api.s(l, "begin"), 11, MUTED, true);
         time.setSingleLine(true);
         row.addView(time, new LinearLayout.LayoutParams(
                 Math.max(dp(42), textColWidth(time)),
@@ -5131,7 +5134,7 @@ public final class MainActivity extends Activity {
         });
 
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(16), dp(14), dp(16), dp(8));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
 
         card.addView(tv("Рейтинг в классе", 15, TEXT, true));
         card.addView(tv("по среднему баллу за текущий период", 11, MUTED, false));
@@ -5166,7 +5169,7 @@ public final class MainActivity extends Activity {
         String trend = Api.s(r, "trend");
 
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
 
         card.addView(tv("Общее место в классе", 15, TEXT, true));
         card.addView(tv("по среднему баллу среди всех предметов", 11, MUTED, false));
@@ -5379,7 +5382,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(2), dp(12), dp(28));
+        content.setPadding(dp(PAD_SCREEN), dp(2), dp(PAD_SCREEN), dp(28));
 
         if (statsMarks == null && statsHw == null) {
             if (statsAuth) {
@@ -5735,7 +5738,7 @@ public final class MainActivity extends Activity {
         int color = avg >= 4.5 ? GREEN : avg >= 3.5 ? AMBER : RED;
 
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
 
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
@@ -5805,8 +5808,8 @@ public final class MainActivity extends Activity {
     private View metricTile(String label, String value, String sub, int color) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(roundBg(SURFACE, 3, STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
         card.addView(tv(label, 10, MUTED, true));
         TextView v = tv(value, 22, color, true);
         v.setPadding(0, dp(2), 0, 0);
@@ -5862,7 +5865,7 @@ public final class MainActivity extends Activity {
         if (list.isEmpty()) return spacer(dp(0));
 
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(16), dp(12), dp(16), dp(6));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
         card.addView(tv("По предметам", 15, TEXT, true));
         card.addView(tv("средний балл и качество знаний", 11, MUTED, false));
 
@@ -5963,7 +5966,7 @@ public final class MainActivity extends Activity {
         final int[] future = {Math.max(1, Math.min(10, statsFuture))};
 
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
         card.addView(tv("Калькулятор оценки", 15, TEXT, true));
         card.addView(tv("что нужно, чтобы вышла нужная итоговая", 11, MUTED, false));
 
@@ -5996,7 +5999,7 @@ public final class MainActivity extends Activity {
             t.setGravity(Gravity.CENTER);
             t.setPadding(dp(12), dp(9), dp(12), dp(9));
             t.setMinHeight(dp(38));
-            t.setBackground(roundBg(SURFACE2, 3, STROKE));
+            t.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
             t.setClickable(true);
             t.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
@@ -6026,7 +6029,7 @@ public final class MainActivity extends Activity {
 
         final TextView minus = tv("−", 18, TEXT, true);
         minus.setGravity(Gravity.CENTER);
-        minus.setBackground(roundBg(SURFACE2, 3, STROKE));
+        minus.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
         minus.setClickable(true);
         stepper.addView(minus, new LinearLayout.LayoutParams(dp(34), dp(34)));
 
@@ -6037,7 +6040,7 @@ public final class MainActivity extends Activity {
 
         final TextView plus = tv("+", 18, TEXT, true);
         plus.setGravity(Gravity.CENTER);
-        plus.setBackground(roundBg(SURFACE2, 3, STROKE));
+        plus.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
         plus.setClickable(true);
         stepper.addView(plus, new LinearLayout.LayoutParams(dp(34), dp(34)));
         card.addView(stepper);
@@ -6066,7 +6069,7 @@ public final class MainActivity extends Activity {
             TextView t = tv("", 11, outColors[i], false);
             t.setGravity(Gravity.CENTER);
             t.setPadding(dp(6), dp(6), dp(6), dp(6));
-            t.setBackground(roundBg(SURFACE2, 3, STROKE));
+            t.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             if (i > 0) lp.leftMargin = dp(6);
@@ -6274,7 +6277,7 @@ public final class MainActivity extends Activity {
 
         if (!subs.isEmpty()) {
             LinearLayout card = card(SURFACE);
-            card.setPadding(dp(16), dp(12), dp(16), dp(8));
+            card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
             card.addView(tv("По предметам", 15, TEXT, true));
             card.addView(tv("сколько сделано из заданного", 11, MUTED, false));
             int limit = Math.min(subs.size(), 8);
@@ -6541,7 +6544,7 @@ public final class MainActivity extends Activity {
 
     private View authCard(String title, String text) {
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(18), dp(18), dp(18), dp(16));
+        card.setPadding(dp(PAD_SCREEN), dp(18), dp(PAD_SCREEN), dp(16));
 
         TextView h = tv(title, 18, TEXT, true);
         card.addView(h);
@@ -6571,8 +6574,8 @@ public final class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(14), dp(10), dp(14), dp(10));
-        card.setBackground(roundBg(ERR_BG, 3, ERR_STROKE));
+        card.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        card.setBackground(roundBg(ERR_BG, RADIUS_CARD, ERR_STROKE));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(8);
@@ -6596,7 +6599,7 @@ public final class MainActivity extends Activity {
 
     private View errorCard(Exception e, final Runnable retry) {
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(18), dp(18), dp(18), dp(16));
+        card.setPadding(dp(PAD_SCREEN), dp(18), dp(PAD_SCREEN), dp(16));
 
         TextView h = tv("Не удалось загрузить", 17, TEXT, true);
         card.addView(h);
@@ -6620,7 +6623,7 @@ public final class MainActivity extends Activity {
 
     private View emptyCard(String title, String sub) {
         LinearLayout card = card(SURFACE);
-        card.setPadding(dp(18), dp(24), dp(18), dp(24));
+        card.setPadding(dp(PAD_SCREEN), dp(20), dp(PAD_SCREEN), dp(20));
 
         TextView h = tv(title, 15, TEXT, true);
         h.setGravity(Gravity.CENTER);
@@ -7446,8 +7449,8 @@ public final class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
-        row.setPadding(dp(16), dp(12), dp(16), dp(12));
-        row.setBackground(accentRipple(3));
+        row.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        row.setBackground(accentRipple(RADIUS_CARD));
         row.setClickable(true);
 
         if (iconRes != 0) {
@@ -7473,9 +7476,9 @@ public final class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
-        row.setPadding(dp(14), dp(11), dp(14), dp(11));
+        row.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
         row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1F2B2A26),
-                roundBg(SURFACE2, 3, STROKE), null));
+                roundBg(SURFACE2, RADIUS_CARD, STROKE), null));
         row.setClickable(true);
 
         if (iconRes != 0) {
@@ -7803,7 +7806,7 @@ public final class MainActivity extends Activity {
                             iv.setImageBitmap(bitmaps.get(i));
                             iv.setAdjustViewBounds(true);
                             iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                            iv.setBackground(roundBg(SURFACE, 2, STROKE));
+                            iv.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
                             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -8009,8 +8012,7 @@ public final class MainActivity extends Activity {
         hint.setPadding(0, dp(4), 0, dp(8));
         root.addView(hint);
 
-        TextView body = tv(text, 10, TEXT, false);
-        body.setTypeface(Typeface.MONOSPACE);
+        TextView body = tv(text, 11, TEXT, false);
         body.setTextIsSelectable(true);
         ScrollView sv = new ScrollView(this);
         sv.addView(body);
@@ -8454,7 +8456,7 @@ public final class MainActivity extends Activity {
             TextView task = tvSerif(text, 16, TEXT, false);
             task.setLineSpacing(dp(4), 1f);
             task.setPadding(dp(14), dp(12), dp(14), dp(12));
-            task.setBackground(roundBg(SURFACE, 3, STROKE));
+            task.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
             box.addView(task);
         }
 
@@ -8487,8 +8489,8 @@ public final class MainActivity extends Activity {
                 } else {
                     LinearLayout row = new LinearLayout(this);
                     row.setOrientation(LinearLayout.VERTICAL);
-                    row.setPadding(dp(14), dp(11), dp(14), dp(11));
-                    row.setBackground(roundBg(SURFACE, 3, STROKE));
+                    row.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+                    row.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
                     row.addView(tv(title, 13, TEXT, false));
                     if (!action.isEmpty()) {
                         TextView a = tv(action, 11, MUTED, false);
@@ -8526,7 +8528,7 @@ public final class MainActivity extends Activity {
                 final String furl = Api.s(f, "url");
                 TextView ft = tv(title, 13, furl.isEmpty() ? TEXT : ACCENT, false);
                 ft.setPadding(dp(14), dp(11), dp(14), dp(11));
-                ft.setBackground(roundBg(SURFACE, 3, STROKE));
+                ft.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
                 if (!furl.isEmpty()) {
                     ft.setClickable(true);
                     ft.setOnClickListener(new View.OnClickListener() {
@@ -8742,7 +8744,15 @@ public final class MainActivity extends Activity {
                         + "заголовками, что у мобильного приложения. Если окно "
                         + "закрыто, карточка объясняет, когда можно отправить "
                         + "работу. При ошибке видно, на каком шаге она "
-                        + "случилась, и неудачные фото остаются для повтора.")
+                        + "случилась, и неудачные фото остаются для повтора.\n\n"
+                        + "2.18: типографика стала однородной. Весь интерфейс "
+                        + "набран Golos — и обычный, и жирный; PT Serif "
+                        + "остался только у крупных заголовков, Caveat — "
+                        + "только у цифр оценок. Моноширинный шрифт убран из "
+                        + "времени уроков и отчёта, остался лишь в служебном "
+                        + "JSON. Карточки получили общую сетку: поля экрана "
+                        + "16 dp, внутри карточек 14×12 dp, одинаковый радиус. "
+                        + "Нижняя навигация стала выше и крупнее.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
@@ -9137,7 +9147,7 @@ public final class MainActivity extends Activity {
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(14), dp(8), dp(8), dp(8));
-        card.setBackground(roundBg(SURFACE2, 3, STROKE));
+        card.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -9367,7 +9377,10 @@ public final class MainActivity extends Activity {
         t.setText(s == null ? "" : s);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
         t.setTextColor(color);
-        t.setTypeface(bold ? fontSerifBold : fontMedium);
+        // Обычный интерфейс — всегда Golos: и обычный, и жирный. PT Serif
+        // остаётся только у заголовков через tvSerif(), иначе мелкие
+        // подписи набирались серифом и выглядели как случайный курсив.
+        t.setTypeface(bold ? fontBold : fontMedium);
         t.setLineSpacing(dp(2), 1f);
         return t;
     }
@@ -9381,9 +9394,9 @@ public final class MainActivity extends Activity {
     private TextView tvHand(String s, float sp, int color) {
         TextView t = tv(s, sp, color, false);
         // В компактном Caveat остались только цифры и знаки. Буквенные
-        // отметки («осв.», «н») рисуем запасным PT Serif — иначе вместо
-        // букв были бы пустые квадратики.
-        t.setTypeface(handOnly(s) ? fontHand : fontSerifBold);
+        // отметки («осв.», «н») рисуем тем же Golos Bold — без третьего
+        // шрифта рядом с рукописной цифрой.
+        t.setTypeface(handOnly(s) ? fontHand : fontBold);
         return t;
     }
 
@@ -9550,8 +9563,8 @@ public final class MainActivity extends Activity {
     private LinearLayout card(int color) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(14), dp(12), dp(14), dp(12));
-        c.setBackground(roundBg(color, 2, STROKE));
+        c.setPadding(dp(PAD_CARD_H), dp(PAD_CARD_V), dp(PAD_CARD_H), dp(PAD_CARD_V));
+        c.setBackground(roundBg(color, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(8);
@@ -9652,7 +9665,7 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(6), dp(3), dp(8), dp(3));
-        row.setBackground(roundBg(SURFACE2, 3, STROKE));
+        row.setBackground(roundBg(SURFACE2, RADIUS_CARD, STROKE));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.rightMargin = dp(6);
