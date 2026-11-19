@@ -452,7 +452,13 @@ public final class MainActivity extends Activity {
     private boolean marksAuth;
     private Exception marksError;
     private int marksGen;
-    private int marksDays = 14;
+    // Именованные школьные периоды. Отрицательные коды не пересекаются
+    // со старыми сохранёнными значениями в днях.
+    private static final int PERIOD_WEEK = -1;
+    private static final int PERIOD_MONTH = -2;
+    private static final int PERIOD_TRIMESTER = -3;
+    private static final int PERIOD_YEAR = 0;
+    private int marksPeriod = PERIOD_MONTH;
     private int marksView;                 // 0 оценки, 1 рейтинг, 2 итоговые
 
     private JSONArray weekData;
@@ -476,7 +482,7 @@ public final class MainActivity extends Activity {
     private boolean hwAuth;
     private Exception hwError;
     private int hwGen;
-    private int hwDays = 14;
+    private int hwPeriod = PERIOD_MONTH;
     private boolean hwPast;
     // Статистика: отдельный набор данных, чтобы период на «Итогах»
     // не зависел от периода на вкладке оценок.
@@ -491,13 +497,8 @@ public final class MainActivity extends Activity {
     private Exception statsMarksError;
     private Exception statsHwError;
     private int statsGen;
-    // Период статистики: именованные школьные отрезки, а не число дней.
-    // Отрицательные значения не пересекаются со старыми 30/90/0.
-    private static final int STATS_WEEK = -1;
-    private static final int STATS_MONTH = -2;
-    private static final int STATS_TRIMESTER = -3;
-    private static final int STATS_YEAR = 0;
-    private int statsDays = STATS_MONTH;
+    // Период статистики: тот же именованный набор, что у оценок.
+    private int statsPeriod = PERIOD_MONTH;
     private String statsSubject = "";
     private int statsTarget = 5;
     private int statsFuture = 3;
@@ -595,14 +596,9 @@ public final class MainActivity extends Activity {
         exec = Executors.newSingleThreadExecutor();
         ui = new Handler(Looper.getMainLooper());
 
-        marksDays = prefs.getInt("marksDays", 14);
-        hwDays = prefs.getInt("hwDays", 14);
-        statsDays = prefs.getInt("statsDays", STATS_MONTH);
-        // Старые настройки хранили 30 / 90 / 0. Переводим их в именованные
-        // периоды один раз, при чтении.
-        if (statsDays == 30) statsDays = STATS_MONTH;
-        else if (statsDays == 90) statsDays = STATS_TRIMESTER;
-        else if (statsDays > 0) statsDays = STATS_MONTH;
+        marksPeriod = readPeriod("marksPeriod", "marksDays", 30);
+        hwPeriod = readPeriod("hwPeriod", "hwDays", 30);
+        statsPeriod = readPeriod("statsPeriod", "statsDays", 30);
         statsTarget = prefs.getInt("statsTarget", 5);
         statsFuture = prefs.getInt("statsFuture", 3);
         statsSubject = prefs.getString("statsSubject", "");
@@ -862,11 +858,11 @@ public final class MainActivity extends Activity {
         } else if (tab == TAB_HW) {
             appTitle.setText("Домашнее задание");
             appSub.setText(hwPast
-                    ? "прошедшие · " + hwDays + " дней"
-                    : "с завтра на " + hwDays + " дней");
+                    ? "назад · " + periodLabel(hwPeriod)
+                    : "вперёд · " + periodLabel(hwPeriod));
         } else if (tab == TAB_MARKS) {
             appTitle.setText("Оценки");
-            appSub.setText("за последние " + marksDays + " дней");
+            appSub.setText(periodLabel(marksPeriod));
         } else if (tab == TAB_STATS) {
             appTitle.setText("Итоги");
             appSub.setText(statsPeriodLabel() + " · оценки и домашнее задание");
@@ -1622,7 +1618,7 @@ public final class MainActivity extends Activity {
 
         final TextView viewBtn = hwDropdownButton(
                 hwPast ? "Прошедшие" : "Актуальные");
-        final TextView daysBtn = hwDropdownButton(hwDays + " дней");
+        final TextView daysBtn = hwDropdownButton(periodLabel(hwPeriod));
         final TextView filterBtn = hwDropdownButton(hwFilter == 1 ? "Не сделано"
                 : hwFilter == 2 ? "Сделано" : "Все");
 
@@ -1655,19 +1651,20 @@ public final class MainActivity extends Activity {
 
         daysBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                final int[] values = {7, 14, 30};
-                String[] labels = {"7 дней", "14 дней", "30 дней"};
-                int checked = hwDays == 7 ? 0 : hwDays == 30 ? 2 : 1;
+                final int[] values = {PERIOD_WEEK, PERIOD_MONTH, PERIOD_TRIMESTER};
+                String[] labels = {"Неделя", "Месяц", "Триместр"};
+                int checked = hwPeriod == PERIOD_WEEK ? 0
+                        : hwPeriod == PERIOD_TRIMESTER ? 2 : 1;
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("Период")
                         .setSingleChoiceItems(labels, checked,
                                 new DialogInterface.OnClickListener() {
                             @Override public void onClick(DialogInterface d, int which) {
                                 d.dismiss();
-                                int days = values[which];
-                                if (hwDays == days) return;
-                                hwDays = days;
-                                prefs.edit().putInt("hwDays", days).apply();
+                                int period = values[which];
+                                if (hwPeriod == period) return;
+                                hwPeriod = period;
+                                prefs.edit().putInt("hwPeriod", period).apply();
                                 hwData = null;
                                 hwError = null;
                                 hwAuth = false;
@@ -1740,8 +1737,8 @@ public final class MainActivity extends Activity {
             content.addView(emptyCard(
                     hwPast ? "Прошедших заданий нет" : "Домашних заданий нет",
                     hwPast
-                            ? "За последние " + hwDays + " дней ничего не было"
-                            : "Начиная с завтрашнего дня ничего не задано"));
+                            ? "За выбранный период ничего не было"
+                            : "На выбранный период ничего не задано"));
             return;
         }
 
@@ -1941,10 +1938,12 @@ public final class MainActivity extends Activity {
     }
 
     private void fetchHw(boolean force) {
+        final int days = periodDays(hwPeriod);
+        // «Неделя назад» — это 7 дней включая сегодня, а не 8.
         final String from = hwPast
-                ? shiftDate(today(), -hwDays) : shiftDate(today(), 1);
+                ? shiftDate(today(), -(days - 1)) : shiftDate(today(), 1);
         final String to = hwPast
-                ? today() : shiftDate(today(), hwDays);
+                ? today() : shiftDate(today(), days);
 
         if (!force && hwData != null && from.equals(hwFrom) && to.equals(hwTo)) {
             return;
@@ -2027,8 +2026,10 @@ public final class MainActivity extends Activity {
 
         if (marksView == 0) {
             LinearLayout periods = chipStrip(page);
-            periods.addView(periodChip("14 дней", 14));
-            periods.addView(periodChip("30 дней", 30));
+            periods.addView(marksPeriodChip("Неделя", PERIOD_WEEK));
+            periods.addView(marksPeriodChip("Месяц", PERIOD_MONTH));
+            periods.addView(marksPeriodChip("Триместр", PERIOD_TRIMESTER));
+            periods.addView(marksPeriodChip("Год", PERIOD_YEAR));
         }
 
         ScrollView scroll = new ScrollView(this);
@@ -2131,8 +2132,8 @@ public final class MainActivity extends Activity {
         return t;
     }
 
-    private View periodChip(String label, final int days) {
-        boolean sel = marksDays == days;
+    private View marksPeriodChip(String label, final int period) {
+        boolean sel = marksPeriod == period;
         TextView t = tv(label, 12, chipInk(sel), sel);
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
         t.setBackground(chipBg(sel, SURFACE));
@@ -2144,9 +2145,9 @@ public final class MainActivity extends Activity {
         t.setLayoutParams(lp);
         t.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                if (marksDays == days) return;
-                marksDays = days;
-                prefs.edit().putInt("marksDays", days).apply();
+                if (marksPeriod == period) return;
+                marksPeriod = period;
+                prefs.edit().putInt("marksPeriod", period).apply();
                 marksData = null;
                 marksError = null;
                 marksAuth = false;
@@ -2559,7 +2560,7 @@ public final class MainActivity extends Activity {
     private void renderMarks(LinearLayout content, JSONArray items) {
         if (items.length() == 0) {
             content.addView(emptyCard("Оценок нет",
-                    "За последние " + marksDays + " дней оценок не было"));
+                    "За выбранный период оценок не было"));
             return;
         }
 
@@ -2647,7 +2648,7 @@ public final class MainActivity extends Activity {
         counts.addView(chipFlow(tags));
 
         TextView total = tv(items.length() + " " + plural(items.length(),
-                "оценка", "оценки", "оценок") + " за " + marksDays + " дней",
+                "оценка", "оценки", "оценок") + " · " + periodLabel(marksPeriod),
                 11, MUTED, false);
         total.setPadding(0, dp(6), 0, 0);
         counts.addView(total);
@@ -4953,7 +4954,7 @@ public final class MainActivity extends Activity {
 
     private void fetchMarks(boolean force) {
         final String to = today();
-        final String from = shiftDate(to, -(marksDays - 1));
+        final String from = periodStart(marksPeriod, to);
 
         if (!force && marksData != null && from.equals(marksFrom) && to.equals(marksTo)) {
             return;
@@ -5293,22 +5294,50 @@ public final class MainActivity extends Activity {
 
     // ------------------------------------------------------------- итоги
 
+    /** Старое значение в днях → именованный период (миграция настроек). */
+    private int readPeriod(String key, String oldKey, int fallback) {
+        int saved = prefs.getInt(key, Integer.MIN_VALUE);
+        if (saved != Integer.MIN_VALUE) return saved;
+        int days = prefs.getInt(oldKey, fallback);
+        if (days == 7) return PERIOD_WEEK;
+        if (days == 90) return PERIOD_TRIMESTER;
+        if (days == 0) return PERIOD_YEAR;
+        return PERIOD_MONTH;
+    }
+
+    private String periodLabel(int period) {
+        if (period == PERIOD_WEEK) return "Неделя";
+        if (period == PERIOD_MONTH) return "Месяц";
+        if (period == PERIOD_TRIMESTER) return "Триместр";
+        if (period == PERIOD_YEAR) return "Год";
+        return period + " дней";
+    }
+
+    /** Длина периода в днях — для списков «назад/вперёд» домашнего задания. */
+    private int periodDays(int period) {
+        if (period == PERIOD_WEEK) return 7;
+        if (period == PERIOD_MONTH) return 30;
+        if (period == PERIOD_TRIMESTER) return 90;
+        if (period == PERIOD_YEAR) return 365;
+        return Math.max(1, period);
+    }
+
+    /** Календарное начало периода; конец всегда — сегодня. */
+    private String periodStart(int period, String to) {
+        if (period == PERIOD_WEEK) return mondayOf(to);
+        if (period == PERIOD_MONTH) return to.length() >= 7
+                ? to.substring(0, 7) + "-01" : shiftDate(to, -29);
+        if (period == PERIOD_TRIMESTER) return trimesterStart(to);
+        if (period == PERIOD_YEAR) return academicStart(to);
+        return shiftDate(to, -(period - 1));
+    }
+
     private String statsPeriodLabel() {
-        if (statsDays == STATS_WEEK) return "Неделя";
-        if (statsDays == STATS_MONTH) return "Месяц";
-        if (statsDays == STATS_TRIMESTER) return "Триместр";
-        if (statsDays == STATS_YEAR) return "Год";
-        return statsDays + " дней";
+        return periodLabel(statsPeriod);
     }
 
     private String statsMarksFromDate() {
-        String to = today();
-        if (statsDays == STATS_WEEK) return mondayOf(to);
-        if (statsDays == STATS_MONTH) return to.length() >= 7
-                ? to.substring(0, 7) + "-01" : shiftDate(to, -29);
-        if (statsDays == STATS_TRIMESTER) return trimesterStart(to);
-        if (statsDays == STATS_YEAR) return academicStart(to);
-        return shiftDate(to, -(statsDays - 1));
+        return periodStart(statsPeriod, today());
     }
 
     /** Начало текущего триместра: сентябрь—ноябрь, декабрь—февраль, март—май. */
@@ -5333,10 +5362,10 @@ public final class MainActivity extends Activity {
         page.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout periods = chipStrip(page);
-        periods.addView(statsPeriodChip("Неделя", STATS_WEEK));
-        periods.addView(statsPeriodChip("Месяц", STATS_MONTH));
-        periods.addView(statsPeriodChip("Триместр", STATS_TRIMESTER));
-        periods.addView(statsPeriodChip("Год", STATS_YEAR));
+        periods.addView(statsPeriodChip("Неделя", PERIOD_WEEK));
+        periods.addView(statsPeriodChip("Месяц", PERIOD_MONTH));
+        periods.addView(statsPeriodChip("Триместр", PERIOD_TRIMESTER));
+        periods.addView(statsPeriodChip("Год", PERIOD_YEAR));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -5437,8 +5466,8 @@ public final class MainActivity extends Activity {
         return page;
     }
 
-    private View statsPeriodChip(String label, final int days) {
-        boolean sel = statsDays == days;
+    private View statsPeriodChip(String label, final int period) {
+        boolean sel = statsPeriod == period;
         TextView t = tv(label, 12, chipInk(sel), sel);
         t.setPadding(dp(14), dp(7), dp(14), dp(7));
         t.setBackground(chipBg(sel, SURFACE));
@@ -5450,9 +5479,9 @@ public final class MainActivity extends Activity {
         t.setLayoutParams(lp);
         t.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                if (statsDays == days) return;
-                statsDays = days;
-                prefs.edit().putInt("statsDays", days).apply();
+                if (statsPeriod == period) return;
+                statsPeriod = period;
+                prefs.edit().putInt("statsPeriod", period).apply();
                 statsMarks = null;
                 statsHw = null;
                 statsMarksError = null;
@@ -8640,7 +8669,11 @@ public final class MainActivity extends Activity {
                         + "2.15: периоды на «Итогах» называются по-школьному: "
                         + "неделя, месяц, триместр и год. Неделя — с "
                         + "понедельника, месяц — с 1-го числа, триместр — "
-                        + "с его начала, год — с 1 сентября.")
+                        + "с его начала, год — с 1 сентября.\n\n"
+                        + "2.16: те же периоды теперь и на «Оценках», и в "
+                        + "домашнем задании: неделя, месяц, триместр, а у "
+                        + "оценок ещё и год. Подписи в шапке и счётчики "
+                        + "тоже называют период, а не число дней.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
@@ -8692,8 +8725,9 @@ public final class MainActivity extends Activity {
         cm.removeAllCookies(null);
         cm.flush();
         prefs.edit().clear().apply();
-        marksDays = 14;
-        hwDays = 14;
+        marksPeriod = PERIOD_MONTH;
+        hwPeriod = PERIOD_MONTH;
+        statsPeriod = PERIOD_MONTH;
         currentDate = today();
         dayData = null;
         dayError = null;
