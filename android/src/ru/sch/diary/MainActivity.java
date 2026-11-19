@@ -491,7 +491,13 @@ public final class MainActivity extends Activity {
     private Exception statsMarksError;
     private Exception statsHwError;
     private int statsGen;
-    private int statsDays = 30;
+    // Период статистики: именованные школьные отрезки, а не число дней.
+    // Отрицательные значения не пересекаются со старыми 30/90/0.
+    private static final int STATS_WEEK = -1;
+    private static final int STATS_MONTH = -2;
+    private static final int STATS_TRIMESTER = -3;
+    private static final int STATS_YEAR = 0;
+    private int statsDays = STATS_MONTH;
     private String statsSubject = "";
     private int statsTarget = 5;
     private int statsFuture = 3;
@@ -591,7 +597,12 @@ public final class MainActivity extends Activity {
 
         marksDays = prefs.getInt("marksDays", 14);
         hwDays = prefs.getInt("hwDays", 14);
-        statsDays = prefs.getInt("statsDays", 30);
+        statsDays = prefs.getInt("statsDays", STATS_MONTH);
+        // Старые настройки хранили 30 / 90 / 0. Переводим их в именованные
+        // периоды один раз, при чтении.
+        if (statsDays == 30) statsDays = STATS_MONTH;
+        else if (statsDays == 90) statsDays = STATS_TRIMESTER;
+        else if (statsDays > 0) statsDays = STATS_MONTH;
         statsTarget = prefs.getInt("statsTarget", 5);
         statsFuture = prefs.getInt("statsFuture", 3);
         statsSubject = prefs.getString("statsSubject", "");
@@ -5283,13 +5294,38 @@ public final class MainActivity extends Activity {
     // ------------------------------------------------------------- итоги
 
     private String statsPeriodLabel() {
-        if (statsDays <= 0) return "учебный год";
+        if (statsDays == STATS_WEEK) return "Неделя";
+        if (statsDays == STATS_MONTH) return "Месяц";
+        if (statsDays == STATS_TRIMESTER) return "Триместр";
+        if (statsDays == STATS_YEAR) return "Год";
         return statsDays + " дней";
     }
 
     private String statsMarksFromDate() {
         String to = today();
-        return statsDays <= 0 ? academicStart(to) : shiftDate(to, -(statsDays - 1));
+        if (statsDays == STATS_WEEK) return mondayOf(to);
+        if (statsDays == STATS_MONTH) return to.length() >= 7
+                ? to.substring(0, 7) + "-01" : shiftDate(to, -29);
+        if (statsDays == STATS_TRIMESTER) return trimesterStart(to);
+        if (statsDays == STATS_YEAR) return academicStart(to);
+        return shiftDate(to, -(statsDays - 1));
+    }
+
+    /** Начало текущего триместра: сентябрь—ноябрь, декабрь—февраль, март—май. */
+    private String trimesterStart(String iso) {
+        int year;
+        int month;
+        try {
+            year = Integer.parseInt(iso.substring(0, 4));
+            month = Integer.parseInt(iso.substring(5, 7));
+        } catch (Exception e) {
+            return academicStart(iso);
+        }
+        if (month >= 9 && month <= 11) return year + "-09-01";
+        if (month == 12) return year + "-12-01";
+        if (month <= 2) return (year - 1) + "-12-01";
+        // Март—август: третий триместр (летом показываем последний).
+        return year + "-03-01";
     }
 
     private View buildStats() {
@@ -5297,9 +5333,10 @@ public final class MainActivity extends Activity {
         page.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout periods = chipStrip(page);
-        periods.addView(statsPeriodChip("30 дней", 30));
-        periods.addView(statsPeriodChip("90 дней", 90));
-        periods.addView(statsPeriodChip("Учебный год", 0));
+        periods.addView(statsPeriodChip("Неделя", STATS_WEEK));
+        periods.addView(statsPeriodChip("Месяц", STATS_MONTH));
+        periods.addView(statsPeriodChip("Триместр", STATS_TRIMESTER));
+        periods.addView(statsPeriodChip("Год", STATS_YEAR));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -8599,7 +8636,11 @@ public final class MainActivity extends Activity {
                         + "2.14: итоговая оценка округляется по школьным "
                         + "порогам: 5 — с 4,56, 4 — с 3,56, 3 — с 2,56. "
                         + "Калькулятор и количество нужных пятёрок считаются "
-                        + "по этим же границам.")
+                        + "по этим же границам.\n\n"
+                        + "2.15: периоды на «Итогах» называются по-школьному: "
+                        + "неделя, месяц, триместр и год. Неделя — с "
+                        + "понедельника, месяц — с 1-го числа, триместр — "
+                        + "с его начала, год — с 1 сентября.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
