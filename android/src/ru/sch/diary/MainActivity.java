@@ -64,6 +64,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -109,6 +110,18 @@ public final class MainActivity extends Activity {
     // Full black рисует акцент контуром, а не заливкой: кнопка остаётся
     // чёрной, белыми становятся рамка и текст.
     private boolean outlineAccent;
+
+    // Пользовательский акцент: 0 — цвет берётся из темы. Иначе кнопки,
+    // выбранные чипы и плашки красятся этим цветом, а не белым/синим.
+    private static final int[] ACCENT_PRESETS = {
+            0xFFFFFFFF, 0xFF8FB0D4, 0xFFB79BC4, 0xFF85B394,
+            0xFFD6A960, 0xFFD9827A, 0xFF7FB8B8, 0xFF89B4FA,
+            0xFFCBA6F7, 0xFFF5C2E7
+    };
+    private static final String[] ACCENT_NAMES = {
+            "белый", "голубой", "лиловый", "зелёный", "янтарный",
+            "красный", "бирюзовый", "синий", "фиолетовый", "розовый"
+    };
 
     private static final int[] SUBJECT_COLORS_LIGHT = {
             0xFF34577D, 0xFF2F6B4F, 0xFF9A6A22, 0xFF6F4A75,
@@ -280,6 +293,33 @@ public final class MainActivity extends Activity {
             ON_ACCENT = 0xFFFFFFFF;
             SUBJECT_COLORS = SUBJECT_COLORS_LIGHT;
         }
+
+        // Явно выбранный акцент сильнее темы. В Full black он тоже
+        // становится заливкой, иначе от цвета осталась бы только рамка.
+        int custom = prefs.getInt("accent", 0);
+        if (custom != 0) {
+            ACCENT = custom | 0xFF000000;
+            ACCENT2 = ACCENT;
+            ACCENT_SOFT = (ACCENT & 0x00FFFFFF) | 0x2A000000;
+            ON_ACCENT = inkOn(ACCENT);
+            outlineAccent = false;
+        }
+    }
+
+    /** Чёрный или белый текст поверх заливки — по её яркости. */
+    private static int inkOn(int color) {
+        double r = linearChannel((color >> 16) & 0xFF);
+        double g = linearChannel((color >> 8) & 0xFF);
+        double b = linearChannel(color & 0xFF);
+        // Относительная яркость sRGB. Порог 0.179 — точка, где контраст
+        // чёрного и белого текста одинаков; ниже выгоднее белый.
+        double lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        return lum > 0.179 ? 0xFF000000 : 0xFFFFFFFF;
+    }
+
+    private static double linearChannel(int v) {
+        double c = v / 255.0;
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     }
 
     /** Тема из настроек: auto следует за системой. */
@@ -3407,6 +3447,188 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
+    // ------------------------------------------------------------- акцент
+
+    /** Текущий акцент: пользовательский или взятый из темы. */
+    private int accentValue() {
+        int v = prefs.getInt("accent", 0);
+        return v == 0 ? ACCENT : (v | 0xFF000000);
+    }
+
+    private String hexColor(int color) {
+        return String.format(Locale.US, "#%06X", color & 0x00FFFFFF);
+    }
+
+    private String accentLabel() {
+        int v = prefs.getInt("accent", 0);
+        if (v == 0) return "как в теме";
+        for (int i = 0; i < ACCENT_PRESETS.length; i++) {
+            if ((v | 0xFF000000) == ACCENT_PRESETS[i]) return ACCENT_NAMES[i];
+        }
+        return "свой · " + hexColor(v);
+    }
+
+    private void setAccent(int color) {
+        prefs.edit().putInt("accent", color == 0 ? 0 : (color | 0xFF000000)).apply();
+        // Пересоздание — единственный надёжный способ перекрасить уже
+        // собранные экраны и диалоги без ручного обхода дерева View.
+        recreate();
+    }
+
+    private void accentDialog() {
+        int current = prefs.getInt("accent", 0);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(4), dp(20), dp(4));
+
+        TextView hint = tv("Цвет кнопок, выбранных вкладок и плашек. "
+                + "Оценки и цветные метки остаются как были.", 12, MUTED, false);
+        hint.setLineSpacing(dp(2), 1f);
+        box.addView(hint);
+
+        TextView auto = tv("Как в теме", 13, chipInk(current == 0), true);
+        auto.setGravity(Gravity.CENTER);
+        auto.setPadding(dp(14), dp(10), dp(14), dp(10));
+        auto.setBackground(current == 0 ? chipBg(true, SURFACE2)
+                : chipBg(false, SURFACE2));
+        auto.setClickable(true);
+        auto.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { setAccent(0); }
+        });
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        alp.topMargin = dp(12);
+        box.addView(auto, alp);
+
+        for (int start = 0; start < ACCENT_PRESETS.length; start += 5) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+            row.setPadding(0, dp(10), 0, 0);
+            for (int i = start; i < start + 5 && i < ACCENT_PRESETS.length; i++) {
+                row.addView(accentSwatch(ACCENT_PRESETS[i],
+                        (current | 0xFF000000) == ACCENT_PRESETS[i]));
+            }
+            box.addView(row);
+        }
+
+        TextView own = secondaryButton("Свой цвет", new Runnable() {
+            @Override public void run() { accentCustomDialog(); }
+        });
+        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        olp.topMargin = dp(14);
+        box.addView(own, olp);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Акцентный цвет")
+                .setView(box)
+                .setNegativeButton("Закрыть", null)
+                .show();
+    }
+
+    private View accentSwatch(final int color, boolean selected) {
+        FrameLayout wrap = new FrameLayout(this);
+        if (selected) wrap.setBackground(roundBg(0x00000000, 22, TEXT));
+
+        View dot = new View(this);
+        dot.setBackground(roundBg(color, 17, STROKE));
+        FrameLayout.LayoutParams dlp = new FrameLayout.LayoutParams(
+                dp(34), dp(34), Gravity.CENTER);
+        wrap.addView(dot, dlp);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44), dp(44));
+        lp.leftMargin = dp(2);
+        lp.rightMargin = dp(2);
+        wrap.setLayoutParams(lp);
+        wrap.setClickable(true);
+        wrap.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { setAccent(color); }
+        });
+        return wrap;
+    }
+
+    private void accentCustomDialog() {
+        int cur = accentValue();
+        final int[] rgb = {(cur >> 16) & 0xFF, (cur >> 8) & 0xFF, cur & 0xFF};
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), dp(4));
+
+        final View preview = new View(this);
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(dp(56), dp(56));
+        plp.gravity = Gravity.CENTER_HORIZONTAL;
+        plp.bottomMargin = dp(6);
+        box.addView(preview, plp);
+
+        final TextView hex = tv("", 12, MUTED, false);
+        hex.setGravity(Gravity.CENTER);
+        hex.setPadding(0, 0, 0, dp(8));
+        box.addView(hex);
+
+        final SeekBar[] bars = new SeekBar[3];
+        final String[] names = {"Красный", "Зелёный", "Синий"};
+
+        final Runnable[] refresh = new Runnable[1];
+        refresh[0] = new Runnable() {
+            @Override public void run() {
+                int c = 0xFF000000
+                        | (bars[0].getProgress() << 16)
+                        | (bars[1].getProgress() << 8)
+                        | bars[2].getProgress();
+                preview.setBackground(roundBg(c, 28, STROKE));
+                hex.setText(hexColor(c) + "  ·  " + (
+                        inkOn(c) == 0xFF000000 ? "чёрный текст" : "белый текст"));
+            }
+        };
+
+        for (int i = 0; i < 3; i++) {
+            final int index = i;
+            TextView label = tv(names[i] + "  " + rgb[i], 12, TEXT, false);
+            label.setPadding(0, dp(8), 0, 0);
+            box.addView(label);
+
+            SeekBar bar = new SeekBar(this);
+            bar.setMax(255);
+            bar.setProgress(rgb[i]);
+            bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar sb, int value, boolean fromUser) {
+                    rgb[index] = value;
+                    TextView l = (TextView) ((LinearLayout) sb.getParent())
+                            .getChildAt(((LinearLayout) sb.getParent())
+                                    .indexOfChild(sb) - 1);
+                    l.setText(names[index] + "  " + value);
+                    refresh[0].run();
+                }
+                @Override public void onStartTrackingTouch(SeekBar sb) { }
+                @Override public void onStopTrackingTouch(SeekBar sb) { }
+            });
+            bars[i] = bar;
+            box.addView(bar);
+        }
+
+        refresh[0].run();
+
+        new AlertDialog.Builder(this)
+                .setTitle("Свой акцент")
+                .setView(box)
+                .setPositiveButton("Готово", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        int c = 0xFF000000
+                                | (bars[0].getProgress() << 16)
+                                | (bars[1].getProgress() << 8)
+                                | bars[2].getProgress();
+                        setAccent(c);
+                    }
+                })
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
     private String fontLabel() {
         float m = prefs.getFloat("font_mult", 1f);
         if (m > 1.25f) return "самый крупный";
@@ -3484,6 +3706,11 @@ public final class MainActivity extends Activity {
                     @Override public void run() { themeDialog(); }
                 }));
         actions.addView(actionDivider());
+        actions.addView(actionRow(R.drawable.ic_star, "Акцентный цвет",
+                accentLabel(), false, new Runnable() {
+                    @Override public void run() { accentDialog(); }
+                }));
+        actions.addView(actionDivider());
         actions.addView(actionRow(R.drawable.ic_text, "Размер текста",
                 "Сейчас: " + fontLabel(), false, new Runnable() {
                     @Override public void run() { fontDialog(); }
@@ -3518,8 +3745,8 @@ public final class MainActivity extends Activity {
         }
         content.addView(actions);
 
-        TextView footer = tv("OpenSchool · 1.6\nданные: school.mos.ru",
-                10, MUTED, false);
+        TextView footer = tv("OpenSchool · " + versionName()
+                + "\nданные: school.mos.ru", 10, MUTED, false);
         footer.setGravity(Gravity.CENTER);
         footer.setPadding(0, dp(20), 0, 0);
         content.addView(footer);
@@ -8363,7 +8590,12 @@ public final class MainActivity extends Activity {
                         + "2.12: если данные уже есть в кэше, они показываются "
                         + "сразу, без пустых заглушек, а сеть догружает их "
                         + "молча. Это работает на всех вкладках, включая "
-                        + "неделю, профиль и итоговые оценки.")
+                        + "неделю, профиль и итоговые оценки.\n\n"
+                        + "2.13: акцентный цвет можно выбрать отдельно от темы — "
+                        + "белый, голубой, зелёный, янтарный и другие, либо "
+                        + "свой по RGB. Он красит кнопки, выбранные вкладки и "
+                        + "плашки, а в Full black кнопки снова становятся "
+                        + "заливными.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
