@@ -6915,6 +6915,9 @@ public final class MainActivity extends Activity {
             if (!window && !hasFiles) {
                 // Раньше секция просто исчезала, и казалось, что прикрепить
                 // нечего. Показываем то же объяснение, что и в МЭШ.
+                for (int i = 0; i < pending.size(); i++) {
+                    attachBox.addView(pendingRow(i));
+                }
                 TextView hint = tv("Загрузить работу можно во время урока "
                         + "и в течение 5 минут после завершения", 11, MUTED, false);
                 hint.setPadding(0, dp(12), 0, dp(2));
