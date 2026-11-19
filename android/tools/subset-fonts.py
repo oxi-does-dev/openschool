@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 """Собирает компактные шрифты из полных в fonts-src/.
 
-Полные PT Serif, Golos Text и Caveat весят 1,3 МБ — это 78% APK. Но
+Полные Source Serif 4, Onest и Caveat весят около 1,6 МБ. Но
 приложение никогда не покажет большинство их глифов: греческий, армянский,
 латинские диакритики Ext-B, старые лигатуры. Субсеттинг выкидывает только
 то, чего на экране не будет, и не меняет ни одного оставшегося контура.
 
 Что делается:
 
-  * PT Serif Regular/Bold — кириллица, латиница (Basic + Latin-1 +
-    Latin Extended-A), пунктуация, валюты, стрелки, математика. Это весь
-    текст интерфейса и весь пользовательский текст из МЭШ. Убираются
-    греческий, Ext-B, лигатуры fb00–fb04 и таблица kern: кернинг остаётся
-    в GPOS, который и использует Android.
-  * Golos Text — переменный шрифт с осью wght. Приложение просит 500 и
-    700, поэтому делаются два статических начертания. gvar (95 КБ дельт)
-    при этом не нужен вовсе.
+  * Source Serif 4 Regular/SemiBold — кириллица, латиница (Basic +
+    Latin-1 + Latin Extended-A), пунктуация, валюты, стрелки, математика.
+    Это заголовки и пользовательский текст из МЭШ. Ось opsz фиксируется
+    на 20, чтобы не тащить дельты оптического размера.
+  * Onest — переменный шрифт с осью wght. Приложение просит 500 и 700,
+    поэтому делаются два статических начертания без gvar.
   * Caveat — только цифры и знаки для оценок. Буквенные оценки («осв.»,
-    «н») tvHand() рисует запасным PT Serif, поэтому кириллица в Caveat
-    не нужна.
+    «н») tvHand() рисует Onest Bold, поэтому кириллица в Caveat не нужна.
 
 Запуск:  python3 tools/subset-fonts.py
 Нужен fonttools (pip install fonttools).
@@ -71,7 +68,7 @@ HAND = {ord(c) for c in "0123456789 .,+-−—–/%×?:!()№"}
 NAME_IDS = [0, 1, 2, 3, 4, 5, 6]
 
 
-def build(src_name, unicodes, out_name, weight=None):
+def build(src_name, unicodes, out_name, weight=None, opsz=None):
     path = os.path.join(SRC, src_name)
     font = TTFont(path)
 
@@ -96,8 +93,13 @@ def build(src_name, unicodes, out_name, weight=None):
         if tag in font:
             del font[tag]
 
-    if weight is not None and "fvar" in font:
-        instantiateVariableFont(font, {"wght": weight}, inplace=True,
+    if (weight is not None or opsz is not None) and "fvar" in font:
+        axes = {}
+        if weight is not None:
+            axes["wght"] = weight
+        if opsz is not None:
+            axes["opsz"] = opsz
+        instantiateVariableFont(font, axes, inplace=True,
                                 updateFontNames=False)
 
     out = os.path.join(DST, out_name)
@@ -124,22 +126,23 @@ def main():
     os.makedirs(DST, exist_ok=True)
 
     print("== шрифты")
-    build("PTSerif-Regular.ttf", TEXT, "PTSerif-Regular.ttf")
-    build("PTSerif-Bold.ttf", TEXT, "PTSerif-Bold.ttf")
-    build("GolosText.ttf", TEXT, "GolosText-Medium.ttf", weight=500)
-    build("GolosText.ttf", TEXT, "GolosText-Bold.ttf", weight=700)
+    build("SourceSerif4.ttf", TEXT, "SourceSerif4-Regular.ttf",
+          weight=400, opsz=20)
+    build("SourceSerif4.ttf", TEXT, "SourceSerif4-SemiBold.ttf",
+          weight=600, opsz=20)
+    build("Onest.ttf", TEXT, "Onest-Medium.ttf", weight=500)
+    build("Onest.ttf", TEXT, "Onest-Bold.ttf", weight=700)
     build("Caveat.ttf", HAND, "Caveat.ttf", weight=600)
 
     # Проверка: ни один символ, который раньше рисовался этими шрифтами,
     # не должен пропасть. Символы, которых в них не было и раньше, и так
     # берутся из системного fallback — их трогать не нужно.
-    text_codes = coverage(os.path.join(DST, "PTSerif-Regular.ttf"))
-    text_codes |= coverage(os.path.join(DST, "GolosText-Medium.ttf"))
+    text_codes = coverage(os.path.join(DST, "SourceSerif4-Regular.ttf"))
+    text_codes |= coverage(os.path.join(DST, "Onest-Medium.ttf"))
     hand_codes = coverage(os.path.join(DST, "Caveat.ttf"))
 
-    old_codes = coverage(os.path.join(SRC, "PTSerif-Regular.ttf"))
-    old_codes |= coverage(os.path.join(SRC, "GolosText.ttf"))
-    old_codes |= coverage(os.path.join(SRC, "PTSerif-Bold.ttf"))
+    old_codes = coverage(os.path.join(SRC, "SourceSerif4.ttf"))
+    old_codes |= coverage(os.path.join(SRC, "Onest.ttf"))
 
     used = set()
     for base, _, files in os.walk(ROOT):

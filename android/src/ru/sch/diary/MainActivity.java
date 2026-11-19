@@ -695,25 +695,25 @@ public final class MainActivity extends Activity {
 
     private void loadFonts() {
         Typeface base = Typeface.DEFAULT;
-        // Golos ужат до двух нужных начертаний: переменная ось wght
-        // занимала 95 КБ дельт, а приложение просит только 500 и 700.
+        // Onest ужат до двух нужных начертаний: переменная ось wght
+        // занимала бы лишние килобайты, а приложение просит только 500 и 700.
         try {
-            base = new Typeface.Builder(getAssets(), "fonts/GolosText-Medium.ttf")
+            base = new Typeface.Builder(getAssets(), "fonts/Onest-Medium.ttf")
                     .build();
         } catch (Exception ignored) {
         }
         fontMedium = base;
         try {
-            fontBold = new Typeface.Builder(getAssets(), "fonts/GolosText-Bold.ttf")
+            fontBold = new Typeface.Builder(getAssets(), "fonts/Onest-Bold.ttf")
                     .build();
         } catch (Exception e) {
             fontBold = Typeface.DEFAULT_BOLD;
         }
         try {
-            fontSerif = Typeface.createFromAsset(getAssets(),
-                    "fonts/PTSerif-Regular.ttf");
-            fontSerifBold = Typeface.createFromAsset(getAssets(),
-                    "fonts/PTSerif-Bold.ttf");
+            fontSerif = new Typeface.Builder(getAssets(),
+                    "fonts/SourceSerif4-Regular.ttf").build();
+            fontSerifBold = new Typeface.Builder(getAssets(),
+                    "fonts/SourceSerif4-SemiBold.ttf").build();
         } catch (Exception e) {
             fontSerif = base;
             fontSerifBold = fontBold;
@@ -722,7 +722,7 @@ public final class MainActivity extends Activity {
             fontHand = new Typeface.Builder(getAssets(), "fonts/Caveat.ttf")
                     .setWeight(600).build();
         } catch (Exception e) {
-            fontHand = fontSerif;
+            fontHand = fontBold;
         }
     }
 
@@ -8752,7 +8752,13 @@ public final class MainActivity extends Activity {
                         + "времени уроков и отчёта, остался лишь в служебном "
                         + "JSON. Карточки получили общую сетку: поля экрана "
                         + "16 dp, внутри карточек 14×12 dp, одинаковый радиус. "
-                        + "Нижняя навигация стала выше и крупнее.")
+                        + "Нижняя навигация стала выше и крупнее.\n\n"
+                        + "2.19: новые шрифты. Интерфейс набран Onest — "
+                        + "геометрическим гротеском с плотными буквами и "
+                        + "чистыми формами. Заголовки — Source Serif 4, "
+                        + "контрастный сериф с высокими выносными. Оба "
+                        + "шрифта с полной кириллицей и открытой лицензией "
+                        + "OFL; Caveat остался только у цифр оценок.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
