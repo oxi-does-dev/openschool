@@ -695,7 +695,9 @@ final class Api {
         try {
             c = (HttpURLConnection) new URL(link).openConnection();
             c.setConnectTimeout(20000);
-            c.setReadTimeout(120000);
+            // Фото весит сотни килобайт: если хранилище молчит дольше
+            // 45 секунд, это зависший запрос, а не медленный интернет.
+            c.setReadTimeout(45000);
             c.setRequestMethod("POST");
             c.setDoOutput(true);
             c.setRequestProperty("User-Agent", UA);

@@ -6707,11 +6707,33 @@ public final class MainActivity extends Activity {
         private boolean uploading;
         private final List<PickedPhoto> pending = new ArrayList<>();
         private LinearLayout attachBox;
+        // Журнал последней отправки: по нему видно, на каком шаге всё
+        // встало, даже если МЭШ ничего не ответил. Он же показывается в
+        // карточке — на телефоне нет logcat.
+        private final List<String> log = new ArrayList<>();
 
         LessonDialog(JSONObject lesson) {
             super(MainActivity.this);
             this.lesson = lesson;
             this.lessonId = Api.s(lesson, "id");
+        }
+
+        private void logLine(String s) {
+            log.add(new java.text.SimpleDateFormat("HH:mm:ss",
+                    java.util.Locale.ROOT).format(new java.util.Date()) + "  " + s);
+            while (log.size() > 40) log.remove(0);
+        }
+
+        // Пишет шаг в журнал и в текст прогресса: если загрузка встанет,
+        // на экране будет видно, на чём именно.
+        private void step(final ProgressDialog pd, String s) {
+            logLine(s);
+            if (pd == null) return;
+            ui.post(new Runnable() {
+                @Override public void run() {
+                    if (pd.isShowing()) pd.setMessage("Отправляю работу…\n" + s);
+                }
+            });
         }
 
         @Override
@@ -6874,6 +6896,47 @@ public final class MainActivity extends Activity {
         }
 
         private void renderAttachment() {
+            if (attachBox == null) return;
+            attachBox.removeAllViews();
+            renderAttachmentBody();
+            addJournal();
+        }
+
+        // Журнал последней попытки. Скрывать его бессмысленно: именно он
+        // показывает, где встало, когда МЭШ молчит.
+        private void addJournal() {
+            if (log.isEmpty()) return;
+            TextView h = tv("Журнал отправки", 10, MUTED, true);
+            h.setLetterSpacing(0.08f);
+            h.setPadding(0, dp(14), 0, dp(4));
+            attachBox.addView(h);
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < log.size(); i++) {
+                sb.append(log.get(i)).append('\n');
+            }
+            final String text = "урок " + lessonId + "\n" + sb;
+            TextView body = tv(sb.toString().trim(), 10, MUTED, false);
+            body.setTextIsSelectable(true);
+            attachBox.addView(body);
+
+            TextView copy = tv("Скопировать журнал", 10, ACCENT, true);
+            copy.setPadding(0, dp(8), 0, 0);
+            copy.setClickable(true);
+            copy.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    ClipboardManager cm = (ClipboardManager)
+                            getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(ClipData.newPlainText("журнал", text));
+                        toast("Журнал скопирован");
+                    }
+                }
+            });
+            attachBox.addView(copy);
+        }
+
+        private void renderAttachmentBody() {
             if (attachBox == null) return;
             attachBox.removeAllViews();
 
@@ -7105,7 +7168,14 @@ public final class MainActivity extends Activity {
         }
 
         void addPhotos(final List<Uri> uris) {
-            if (uploading || uris == null || uris.isEmpty()) return;
+            if (uploading) {
+                toast("Идёт отправка — дождитесь её окончания");
+                return;
+            }
+            if (uris == null || uris.isEmpty()) {
+                toast("Фото не выбрано");
+                return;
+            }
             int existing = 0;
             if (studentWork != null) {
                 JSONArray f = studentWork.optJSONArray("files");
@@ -7118,6 +7188,7 @@ public final class MainActivity extends Activity {
             }
             final List<Uri> take = new ArrayList<>(
                     uris.subList(0, Math.min(room, uris.size())));
+            logLine("выбрано фото: " + uris.size() + ", беру " + take.size());
             toast("Готовлю фото…");
             if (exec.isShutdown()) return;
             exec.execute(new Runnable() {
@@ -7129,8 +7200,11 @@ public final class MainActivity extends Activity {
                             out.add(readPhoto(u));
                         } catch (Exception e) {
                             failed++;
+                            logLine("фото не прочитано: "
+                                    + (e.getMessage() == null ? "?" : e.getMessage()));
                         }
                     }
+                    logLine("прочитано фото: " + out.size() + " из " + take.size());
                     final int bad = failed;
                     ui.post(new Runnable() {
                         @Override public void run() {
@@ -7164,7 +7238,14 @@ public final class MainActivity extends Activity {
         }
 
         private void sendWorkNow() {
-            if (uploading || pending.isEmpty()) return;
+            if (uploading) {
+                toast("Уже отправляю…");
+                return;
+            }
+            if (pending.isEmpty()) {
+                toast("Нет фото для отправки");
+                return;
+            }
             uploading = true;
 
             final ProgressDialog pd = new ProgressDialog(MainActivity.this);
@@ -7176,6 +7257,9 @@ public final class MainActivity extends Activity {
             final Integer var = variant;
             final String workIdNow = Api.workId(studentWork);
             final Integer oldVariant = workVariant(studentWork);
+            step(pd, "старт: фото " + files.size()
+                    + (workIdNow.isEmpty() ? ", работы ещё нет"
+                    : ", работа " + workIdNow));
 
             if (exec.isShutdown()) {
                 pd.dismiss();
@@ -7188,14 +7272,17 @@ public final class MainActivity extends Activity {
                         Api api = Api.fromCookies();
                         String workId = workIdNow;
                         if (workId.isEmpty()) {
+                            step(pd, "создаю работу в МЭШ…");
                             try {
                                 JSONObject created = api.createStudentWork(lessonId, var);
                                 workId = Api.workId(created);
+                                step(pd, "работа создана: " + workId);
                             } catch (Api.ApiException e) {
                                 // 409 — работа уже создана (например, с другого
                                 // устройства или при повторной отправке).
                                 if (e.status == 409) {
                                     workId = api.existingWorkId(lessonId);
+                                    step(pd, "работа уже была: " + workId);
                                 } else {
                                     throw new Api.ApiException(e.status,
                                             "не удалось создать работу: "
@@ -7222,6 +7309,8 @@ public final class MainActivity extends Activity {
                         int failed = 0;
                         String firstError = null;
                         for (PickedPhoto p : files) {
+                            final String fname = p.name;
+                            step(pd, "файл " + fname + ": прошу ссылку в хранилище");
                             try {
                                 JSONObject acc;
                                 try {
@@ -7238,13 +7327,21 @@ public final class MainActivity extends Activity {
                                 String link = Api.s(acc, "file_link");
                                 String tok = Api.s(acc, "token");
                                 String uuid = Api.s(acc, "file_uuid");
+                                logLine("  ссылка: " + (link.isEmpty() ? "нет"
+                                        : link.replaceAll("\\?.*$", "")
+                                                .replaceAll("^https?://", ""))
+                                        + ", token: " + (tok.isEmpty() ? "нет" : "есть")
+                                        + ", uuid: " + (uuid.isEmpty() ? "нет" : "есть"));
                                 if (link.isEmpty() || tok.isEmpty() || uuid.isEmpty()) {
                                     throw new Api.ApiException(
                                             "хранилище не выдало ссылку на файл");
                                 }
                                 try {
+                                    step(pd, "файл " + fname + ": заливаю "
+                                            + fileSize(p.data.length));
                                     api.uploadFile(link, tok, p.name,
                                             "image/jpeg", p.data);
+                                    logLine("  залито: " + fileSize(p.data.length));
                                 } catch (Exception e) {
                                     throw new Api.ApiException("фото не загрузилось: "
                                             + (e.getMessage() == null ? "?" : e.getMessage()));
@@ -7264,13 +7361,16 @@ public final class MainActivity extends Activity {
                                 done.add(p);
                             } catch (Exception e) {
                                 failed++;
+                                logLine("  ошибка: " + e.getMessage());
                                 if (firstError == null) firstError = e.getMessage();
                             }
                         }
 
                         if (regs.length() > 0) {
+                            step(pd, "прикрепляю файлы к работе…");
                             try {
                                 api.upsertFiles(workId, regs);
+                                logLine("  прикреплено файлов: " + regs.length());
                             } catch (Exception e) {
                                 throw new Api.ApiException(
                                         "файлы загружены, но МЭШ не принял их: "
@@ -7300,18 +7400,22 @@ public final class MainActivity extends Activity {
                                     }
                                     errorDialog(new Exception(msg));
                                 } else {
+                                    logLine("готово: работа отправлена");
                                     toast("Работа отправлена на проверку");
                                 }
+                                renderAttachment();
                                 loadDetails();
                                 dayData = null;
                                 scheduleDayLoad(true);
                             }
                         });
                     } catch (final Exception e) {
+                        logLine("сбой: " + e.getMessage());
                         ui.post(new Runnable() {
                             @Override public void run() {
                                 pd.dismiss();
                                 uploading = false;
+                                renderAttachment();
                                 errorDialog(e);
                             }
                         });
@@ -8759,7 +8863,14 @@ public final class MainActivity extends Activity {
                         + "поэтому тема задаёт его и системным диалогам, "
                         + "спискам, полям ввода и календарю: Roboto больше "
                         + "нигде не появляется, даже в тостах. Символы, "
-                        + "которых в серифе нет (▸ ▾), заменены на + − и ›.")
+                        + "которых в серифе нет (▸ ▾), заменены на + − и ›.\n\n"
+                        + "2.21: у отправки работы появился журнал. Прогресс "
+                        + "теперь пишет текущий шаг («создаю работу», «прошу "
+                        + "ссылку в хранилище», «заливаю 214 КБ»), а после "
+                        + "попытки в карточке остаётся журнал с ответами МЭШ "
+                        + "и кнопкой «Скопировать журнал». Молчаливые выходы "
+                        + "(«идёт отправка», «фото не выбрано») теперь "
+                        + "объясняются тостом.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
