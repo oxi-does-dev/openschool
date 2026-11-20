@@ -694,33 +694,27 @@ public final class MainActivity extends Activity {
     }
 
     private void loadFonts() {
+        // Сериф — единственный шрифт интерфейса. Файлы лежат в res/font,
+        // а не в assets: так тема задаёт android:fontFamily, и системные
+        // диалоги, списки и поля ввода тоже набираются серифом, а не
+        // Roboto по умолчанию.
         Typeface base = Typeface.DEFAULT;
-        // Onest ужат до двух нужных начертаний: переменная ось wght
-        // занимала бы лишние килобайты, а приложение просит только 500 и 700.
         try {
-            base = new Typeface.Builder(getAssets(), "fonts/Onest-Medium.ttf")
-                    .build();
+            base = getResources().getFont(R.font.serif_regular);
         } catch (Exception ignored) {
         }
         fontMedium = base;
         try {
-            fontBold = new Typeface.Builder(getAssets(), "fonts/Onest-Bold.ttf")
-                    .build();
+            fontBold = getResources().getFont(R.font.serif_semibold);
         } catch (Exception e) {
             fontBold = Typeface.DEFAULT_BOLD;
         }
+        // Заголовковый шрифт теперь тот же: разница только в кегле и
+        // насыщенности, поэтому третьей гарнитуры в APK нет.
+        fontSerif = fontMedium;
+        fontSerifBold = fontBold;
         try {
-            fontSerif = new Typeface.Builder(getAssets(),
-                    "fonts/SourceSerif4-Regular.ttf").build();
-            fontSerifBold = new Typeface.Builder(getAssets(),
-                    "fonts/SourceSerif4-SemiBold.ttf").build();
-        } catch (Exception e) {
-            fontSerif = base;
-            fontSerifBold = fontBold;
-        }
-        try {
-            fontHand = new Typeface.Builder(getAssets(), "fonts/Caveat.ttf")
-                    .setWeight(600).build();
+            fontHand = getResources().getFont(R.font.caveat);
         } catch (Exception e) {
             fontHand = fontBold;
         }
@@ -1714,7 +1708,7 @@ public final class MainActivity extends Activity {
     }
 
     private TextView hwDropdownButton(String label) {
-        TextView t = tv(label + "  ▾", 11, TEXT, false);
+        TextView t = tv(label + "  ›", 11, TEXT, false);
         t.setGravity(Gravity.CENTER);
         t.setSingleLine(true);
         t.setMaxLines(1);
@@ -3187,7 +3181,7 @@ public final class MainActivity extends Activity {
         head.setClickable(true);
         head.setBackground(rippleBg(0x00000000, 3));
 
-        final TextView arrow = tvSans(open ? "▾" : "▸", 13, MUTED, false);
+        final TextView arrow = tvSans(open ? "−" : "+", 13, MUTED, false);
         arrow.setLayoutParams(new LinearLayout.LayoutParams(dp(18),
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         head.addView(arrow);
@@ -3211,7 +3205,7 @@ public final class MainActivity extends Activity {
             @Override public void onClick(View v) {
                 boolean show = body.getVisibility() != View.VISIBLE;
                 body.setVisibility(show ? View.VISIBLE : View.GONE);
-                arrow.setText(show ? "▾" : "▸");
+                arrow.setText(show ? "−" : "+");
             }
         });
         return sec;
@@ -5982,7 +5976,7 @@ public final class MainActivity extends Activity {
         subjectLabel.setEllipsize(TextUtils.TruncateAt.END);
         pick.addView(subjectLabel, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        pick.addView(tv("выбрать ▾", 11, ACCENT, true));
+        pick.addView(tv("выбрать ›", 11, ACCENT, true));
         card.addView(pick, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -8758,7 +8752,14 @@ public final class MainActivity extends Activity {
                         + "чистыми формами. Заголовки — Source Serif 4, "
                         + "контрастный сериф с высокими выносными. Оба "
                         + "шрифта с полной кириллицей и открытой лицензией "
-                        + "OFL; Caveat остался только у цифр оценок.")
+                        + "OFL; Caveat остался только у цифр оценок.\n\n"
+                        + "2.20: сериф теперь везде. Onest убран, весь "
+                        + "интерфейс — Source Serif 4: заголовки, подписи, "
+                        + "кнопки, время уроков. Шрифт переехал в res/font, "
+                        + "поэтому тема задаёт его и системным диалогам, "
+                        + "спискам, полям ввода и календарю: Roboto больше "
+                        + "нигде не появляется, даже в тостах. Символы, "
+                        + "которых в серифе нет (▸ ▾), заменены на + − и ›.")
                 .setPositiveButton("Понятно", null)
                 .show();
     }
@@ -9369,7 +9370,20 @@ public final class MainActivity extends Activity {
     }
 
     private void toast(String s) {
-        Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+        // Системный Toast рисуется системным шрифтом, поэтому собираем
+        // свой: та же гарнитура, тот же радиус и те же цвета, что у
+        // остального интерфейса.
+        try {
+            TextView t = tv(s, 13, TEXT, false);
+            t.setPadding(dp(PAD_CARD_H), dp(10), dp(PAD_CARD_H), dp(10));
+            t.setBackground(roundBg(SURFACE, RADIUS_CARD, STROKE));
+            Toast toast = new Toast(this);
+            toast.setView(t);
+            toast.setDuration(Toast.LENGTH_SHORT);
+            toast.show();
+        } catch (Exception e) {
+            Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+        }
     }
 
     // ------------------------------------------------------------- виджеты

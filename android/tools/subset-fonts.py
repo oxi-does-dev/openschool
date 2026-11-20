@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """Собирает компактные шрифты из полных в fonts-src/.
 
-Полные Source Serif 4, Onest и Caveat весят около 1,6 МБ. Но
+Полные Source Serif 4 и Caveat весят около 1,6 МБ. Но
 приложение никогда не покажет большинство их глифов: греческий, армянский,
 латинские диакритики Ext-B, старые лигатуры. Субсеттинг выкидывает только
 то, чего на экране не будет, и не меняет ни одного оставшегося контура.
 
 Что делается:
 
-  * Source Serif 4 Regular/SemiBold — кириллица, латиница (Basic +
-    Latin-1 + Latin Extended-A), пунктуация, валюты, стрелки, математика.
-    Это заголовки и пользовательский текст из МЭШ. Ось opsz фиксируется
-    на 20, чтобы не тащить дельты оптического размера.
-  * Onest — переменный шрифт с осью wght. Приложение просит 500 и 700,
-    поэтому делаются два статических начертания без gvar.
+  * Source Serif 4 Regular/SemiBold — единственный шрифт интерфейса:
+    кириллица, латиница (Basic + Latin-1 + Latin Extended-A), пунктуация,
+    валюты, стрелки, математика. Ось opsz фиксируется на 20, чтобы не
+    тащить дельты оптического размера.
   * Caveat — только цифры и знаки для оценок. Буквенные оценки («осв.»,
-    «н») tvHand() рисует Onest Bold, поэтому кириллица в Caveat не нужна.
+    «н») tvHand() рисует серифом, поэтому кириллица в Caveat не нужна.
+
+Файлы кладутся в res/font, а не в assets: тогда тема может указать
+android:fontFamily, и системные диалоги, списки и поля ввода тоже
+рисуются серифом, а не Roboto по умолчанию.
 
 Запуск:  python3 tools/subset-fonts.py
 Нужен fonttools (pip install fonttools).
@@ -30,7 +32,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "fonts-src")
-DST = os.path.join(ROOT, "assets", "fonts")
+DST = os.path.join(ROOT, "res", "font")
 
 
 def code_range(start, end):
@@ -52,7 +54,6 @@ SYMBOLS = {
     0x2116,  # №
     0x2190, 0x2191, 0x2192, 0x2193,  # стрелки
     0x2212,  # −
-    0x25B8, 0x25BE,  # ▸ ▾
     0x2713, 0x2714,  # ✓ ✔
 }
 
@@ -126,23 +127,17 @@ def main():
     os.makedirs(DST, exist_ok=True)
 
     print("== шрифты")
-    build("SourceSerif4.ttf", TEXT, "SourceSerif4-Regular.ttf",
+    build("SourceSerif4.ttf", TEXT, "serif_regular.ttf",
           weight=400, opsz=20)
-    build("SourceSerif4.ttf", TEXT, "SourceSerif4-SemiBold.ttf",
+    build("SourceSerif4.ttf", TEXT, "serif_semibold.ttf",
           weight=600, opsz=20)
-    build("Onest.ttf", TEXT, "Onest-Medium.ttf", weight=500)
-    build("Onest.ttf", TEXT, "Onest-Bold.ttf", weight=700)
-    build("Caveat.ttf", HAND, "Caveat.ttf", weight=600)
+    build("Caveat.ttf", HAND, "caveat.ttf", weight=600)
 
-    # Проверка: ни один символ, который раньше рисовался этими шрифтами,
-    # не должен пропасть. Символы, которых в них не было и раньше, и так
-    # берутся из системного fallback — их трогать не нужно.
-    text_codes = coverage(os.path.join(DST, "SourceSerif4-Regular.ttf"))
-    text_codes |= coverage(os.path.join(DST, "Onest-Medium.ttf"))
-    hand_codes = coverage(os.path.join(DST, "Caveat.ttf"))
-
-    old_codes = coverage(os.path.join(SRC, "SourceSerif4.ttf"))
-    old_codes |= coverage(os.path.join(SRC, "Onest.ttf"))
+    # Строгая проверка: каждый символ, который встречается в исходниках,
+    # обязан быть в серифе или в Caveat. Иначе Android молча дорисует его
+    # Roboto, и в середине серифной строки появится другой шрифт.
+    text_codes = coverage(os.path.join(DST, "serif_regular.ttf"))
+    hand_codes = coverage(os.path.join(DST, "caveat.ttf"))
 
     used = set()
     for base, _, files in os.walk(ROOT):
@@ -155,15 +150,15 @@ def main():
                     used.update(fh.read())
 
     missing = sorted(c for c in used
-                     if ord(c) >= 0x20 and ord(c) in old_codes
-                     and ord(c) not in text_codes)
+                     if ord(c) >= 0x20 and ord(c) not in text_codes
+                     and ord(c) not in hand_codes)
     if missing:
-        sys.exit("потеряны символы, которые были в шрифтах: %s"
-                 % " ".join("U+%04X" % ord(c) for c in missing))
+        sys.exit("нет глифов, Android подставит Roboto: %s"
+                 % " ".join("%s U+%04X" % (c, ord(c)) for c in missing))
     lost_hand = sorted(c for c in HAND if c not in hand_codes)
     if lost_hand:
         sys.exit("Caveat потерял: %s" % "".join(map(chr, lost_hand)))
-    print("== проверка: все %d символов исходников на месте" % len(used))
+    print("== проверка: все %d символов исходников покрыты серифом" % len(used))
 
 
 if __name__ == "__main__":
